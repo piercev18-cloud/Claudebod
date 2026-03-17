@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#080808"/>
+  <!-- Barbell -->
+  <rect x="60" y="236" width="392" height="40" rx="8" fill="#1e1e1e"/>
+  <!-- Left weight plate big -->
+  <rect x="60" y="180" width="52" height="152" rx="10" fill="#C8F55A"/>
+  <!-- Left weight plate small -->
+  <rect x="116" y="200" width="28" height="112" rx="8" fill="#9dc444"/>
+  <!-- Right weight plate big -->
+  <rect x="400" y="180" width="52" height="152" rx="10" fill="#C8F55A"/>
+  <!-- Right weight plate small -->
+  <rect x="368" y="200" width="28" height="112" rx="8" fill="#9dc444"/>
+  <!-- Center collar -->
+  <rect x="232" y="220" width="48" height="72" rx="6" fill="#2a2a2a"/>
+  <!-- CB text -->
+  <text x="256" y="160" text-anchor="middle" font-family="Arial Black, sans-serif" font-size="72" font-weight="900" fill="#C8F55A" letter-spacing="-4">CB</text>
+</svg>
