@@ -6,11 +6,13 @@ let currentTab = 'today';
 let activeExerciseId = null;
 let swapModalOpen = false;
 let deferredInstallPrompt = null;
+let selectedDow = new Date().getDay(); // which program-day is shown (can be overridden)
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   await Store.open();
-  await Session.loadSessionForDate(Session.getTodayString());
+  selectedDow = new Date().getDay();
+  await Session.loadSessionForDate(Session.getTodayString(), selectedDow);
   renderApp();
   setupNav();
   setupInstallPrompt();
@@ -61,16 +63,19 @@ function renderApp() {
 
 // ── TODAY TAB ─────────────────────────────────────────────────────────────────
 function renderToday(container) {
-  const { day } = getTodayDay();
-  const accent   = day.accent;
+  const day       = PROGRAM.days[selectedDow];
+  const accent    = day.accent;
   const phaseInfo = Session.getCurrentPhaseInfo();
+  const todayDow  = new Date().getDay();
 
-  let html = buildTodayHeader(day, accent, phaseInfo);
+  let html = buildDayPicker(todayDow, selectedDow);
+  html += buildTodayHeader(day, accent, phaseInfo);
 
   if (day.type === 'rest') {
     html += buildRestDay();
     container.innerHTML = html;
     attachBWEvents();
+    attachDayPickerEvents();
     return;
   }
 
@@ -81,22 +86,60 @@ function renderToday(container) {
     html += `<div id="exercise-detail-container"></div>`;
     container.innerHTML = html;
     attachBWEvents();
+    attachDayPickerEvents();
     loadAndRenderExerciseDetail(activeExerciseId, day);
   } else {
-    html += buildWarmupSection(day);
+    html += buildWarmupSection(selectedDow);
     html += `<div class="section-divider">EXERCISES</div>`;
     html += `<div class="exercise-list">`;
     for (const ex of day.exercises) {
       html += renderExerciseCard(ex, accent);
     }
     html += `</div>`;
-    html += buildCoreSection(day);
-    html += buildCooldownSection(day);
+    html += buildCoreSection(selectedDow);
+    html += buildCooldownSection(selectedDow);
     container.innerHTML = html;
     attachBWEvents();
+    attachDayPickerEvents();
     attachExerciseCardEvents();
     attachAccordionEvents();
   }
+}
+
+// ── Day Picker ────────────────────────────────────────────────────────────────
+function buildDayPicker(todayDow, selected) {
+  const labels = ['S','M','T','W','T','F','S'];
+  const names  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html = `<div class="day-picker">`;
+  for (let d = 0; d < 7; d++) {
+    const dayData  = PROGRAM.days[d];
+    const accent   = dayData.accent;
+    const isToday  = d === todayDow;
+    const isSel    = d === selected;
+    const isRest   = dayData.type === 'rest';
+    html += `
+      <button class="day-pill${isSel ? ' selected' : ''}${isRest ? ' rest' : ''}"
+        data-dow="${d}" style="--pill-accent:${accent}">
+        <span class="day-pill-label">${labels[d]}</span>
+        <span class="day-pill-name">${names[d]}</span>
+        ${isToday ? '<span class="day-pill-dot"></span>' : ''}
+      </button>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function attachDayPickerEvents() {
+  document.querySelectorAll('.day-pill').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const dow = parseInt(btn.dataset.dow);
+      if (dow === selectedDow) return;
+      selectedDow = dow;
+      activeExerciseId = null;
+      await Session.loadSessionForDate(Session.getTodayString(), selectedDow);
+      renderApp();
+    });
+  });
 }
 
 function buildTodayHeader(day, accent, phaseInfo) {
@@ -136,8 +179,7 @@ function buildRestDay() {
     </div>`;
 }
 
-function buildWarmupSection(day) {
-  const dow = new Date().getDay();
+function buildWarmupSection(dow) {
   const wu  = PROGRAM.warmup[dow];
   if (!wu) return '';
   return `
@@ -159,8 +201,7 @@ function buildWarmupSection(day) {
     </details>`;
 }
 
-function buildCoreSection(day) {
-  const dow  = new Date().getDay();
+function buildCoreSection(dow) {
   const core = PROGRAM.coreWork[dow];
   if (!core) return '';
   return `
@@ -182,8 +223,7 @@ function buildCoreSection(day) {
     </details>`;
 }
 
-function buildCooldownSection(day) {
-  const dow = new Date().getDay();
+function buildCooldownSection(dow) {
   const cd  = PROGRAM.cooldown[dow];
   if (!cd) return '';
   return `

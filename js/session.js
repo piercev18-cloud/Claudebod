@@ -2,9 +2,10 @@
 'use strict';
 
 const Session = (() => {
-  let currentDate = getTodayString();
-  let sessionData  = {};  // { [exId]: { sets: [{weight, reps, done, effortValue}] } }
-  let mesoState    = null;
+  let currentDate   = getTodayString();
+  let currentDow    = new Date().getDay();  // which program-day is loaded (can differ from calendar)
+  let sessionData   = {};  // { [exId]: { sets: [{weight, reps, done, effortValue}] } }
+  let mesoState     = null;
   let swapOverrides = {}; // { [exId]: swappedToName }
 
   function getTodayString() {
@@ -108,14 +109,16 @@ const Session = (() => {
 
   // ── Session Load ──────────────────────────────────────────────────────────
 
-  async function loadSessionForDate(date) {
+  // Load session. If `dowOverride` is provided, load that program-day's
+  // exercises instead of the calendar day-of-week.
+  async function loadSessionForDate(date, dowOverride) {
     currentDate = date;
     sessionData = {};
     swapOverrides = {};
     await loadMesoState();
 
-    const dow = new Date(date + 'T12:00:00').getDay();
-    const exercises = getExercisesForDay(dow);
+    currentDow = dowOverride != null ? dowOverride : new Date(date + 'T12:00:00').getDay();
+    const exercises = getExercisesForDay(currentDow);
 
     for (const ex of exercises) {
       const log = await Store.getSetLog(ex.id, date);
@@ -140,8 +143,7 @@ const Session = (() => {
   // ── CRUD on Sets ──────────────────────────────────────────────────────────
 
   async function _persist(exerciseId) {
-    const dow = new Date(currentDate + 'T12:00:00').getDay();
-    await Store.saveSetLog(exerciseId, dow, currentDate, sessionData[exerciseId].sets);
+    await Store.saveSetLog(exerciseId, currentDow, currentDate, sessionData[exerciseId].sets);
   }
 
   async function updateSet(exerciseId, setIndex, field, value) {
@@ -234,6 +236,7 @@ const Session = (() => {
     getCompletionCount,
     shouldSuggestRotation,
     get currentDate() { return currentDate; },
+    get currentDow()  { return currentDow; },
     get sessionData()  { return sessionData; },
     get mesoState()    { return mesoState; },
   };
