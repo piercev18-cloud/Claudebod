@@ -1,4 +1,4 @@
-// CLAUDEBOD - Main App v2
+// CLAUDEBOD v3 - Main App (Retro Arcade Edition)
 'use strict';
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -6,11 +6,12 @@ let currentTab = 'today';
 let activeExerciseId = null;
 let swapModalOpen = false;
 let deferredInstallPrompt = null;
-let selectedDow = new Date().getDay(); // which program-day is shown (can be overridden)
+let selectedDow = new Date().getDay();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   await Store.open();
+  await XPEngine.load();
   selectedDow = new Date().getDay();
   await Session.loadSessionForDate(Session.getTodayString(), selectedDow);
   renderApp();
@@ -54,11 +55,74 @@ function switchTab(tab) {
 
 // ── Main Render ───────────────────────────────────────────────────────────────
 function renderApp() {
+  renderXPBar();
   const main = document.getElementById('main-content');
   if (!main) return;
   if      (currentTab === 'today')    renderToday(main);
   else if (currentTab === 'history')  renderHistory(main);
   else if (currentTab === 'progress') renderProgress(main);
+}
+
+// ── XP Bar ────────────────────────────────────────────────────────────────────
+function renderXPBar() {
+  const container = document.getElementById('xp-bar-container');
+  if (!container) return;
+  const info = XPEngine.getLevelInfo();
+  const pct  = info.neededXP > 0 ? Math.min(100, (info.currentXP / info.neededXP) * 100) : 100;
+  container.innerHTML = `
+    <div class="xp-header">
+      <div class="xp-level-badge">LV ${info.level}</div>
+      <div class="xp-bar-wrap">
+        <div class="xp-bar-fill" style="width:${pct.toFixed(1)}%"></div>
+      </div>
+      <div class="xp-text">${info.currentXP}/${info.neededXP} XP</div>
+    </div>`;
+}
+
+// ── Achievement Toast ─────────────────────────────────────────────────────────
+function showAchievementToast(achievement) {
+  const existing = document.querySelector('.achievement-toast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.className = 'achievement-toast';
+  toast.innerHTML = `
+    <div class="toast-icon">${achievement.icon}</div>
+    <div>
+      <div class="toast-text">ACHIEVEMENT UNLOCKED</div>
+      <div class="toast-text">${achievement.name}</div>
+      <div class="toast-sub">${achievement.desc}</div>
+    </div>`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3500);
+}
+
+// Show XP popup on set completion
+function showXPPopup(amount, element) {
+  const popup = document.createElement('div');
+  popup.style.cssText = `
+    position:absolute;font-family:'Press Start 2P',monospace;font-size:10px;
+    color:#39ff14;text-shadow:0 0 8px #39ff14;pointer-events:none;
+    z-index:999;animation:xpFloat .8s ease-out forwards;white-space:nowrap;
+  `;
+  popup.textContent = `+${amount} XP`;
+  if (element) {
+    const rect = element.getBoundingClientRect();
+    popup.style.left = rect.right + 'px';
+    popup.style.top  = rect.top + 'px';
+  } else {
+    popup.style.right = '20px';
+    popup.style.top   = '60px';
+  }
+  document.body.appendChild(popup);
+  setTimeout(() => popup.remove(), 900);
+}
+
+// Check achievements and show toasts for new ones
+async function checkAndShowAchievements() {
+  const newAch = await XPEngine.checkAchievements();
+  for (let i = 0; i < newAch.length; i++) {
+    setTimeout(() => showAchievementToast(newAch[i]), i * 3600);
+  }
 }
 
 // ── TODAY TAB ─────────────────────────────────────────────────────────────────
@@ -490,6 +554,38 @@ function attachExerciseDetailEvents(exerciseId, ex, sets, recWeight) {
         // Show next-set weight hint
         updateNextSetHint(container, idx, sets, effort, ex.type, exerciseId);
 
+        // ── XP Award ──
+        const xpGained = await XPEngine.awardSetXP(weight, reps, exType, effort);
+        showXPPopup(xpGained, btn);
+        renderXPBar();
+        // Check for exercise PR
+        await XPEngine.recordPR(exerciseId, weight);
+        // Check if all sets done (exercise complete bonus)
+        const allDone = sets.every(s => s.done);
+        if (allDone) {
+          await XPEngine.awardBonusXP(XP.allSetsComplete, 'exercise complete');
+          renderXPBar();
+          // Check if entire workout is complete
+          const dayExs = PROGRAM.days[selectedDow].exercises || [];
+          const workoutDone = dayExs.every(e => {
+            const c = Session.getCompletionCount(e.id);
+            return c.total > 0 && c.done === c.total;
+          });
+          if (workoutDone) {
+            await XPEngine.recordWorkoutComplete();
+            // Calculate session volume
+            let vol = 0;
+            for (const e of dayExs) {
+              const sd = Session.sessionData[e.id];
+              if (sd) for (const s of sd.sets) if (s.done) vol += (s.weight||0)*(s.reps||0);
+            }
+            await XPEngine.recordSessionVolume(vol);
+            if (selectedDow === 6) await XPEngine.recordOlySession();
+            renderXPBar();
+          }
+        }
+        await checkAndShowAchievements();
+
         // Start rest timer
         Timer.start(PROGRAM.restTime[exType] || 90);
       }
@@ -629,6 +725,9 @@ function attachBWEvents() {
     const val = parseFloat(input.value);
     if (!isNaN(val) && val > 0) {
       await Store.saveBodyweight(Session.getTodayString(), val);
+      await XPEngine.recordBWLog();
+      renderXPBar();
+      await checkAndShowAchievements();
       input.value = '';
       loadBodyweightHistory();
     }
@@ -774,6 +873,18 @@ async function renderProgress(container) {
       <div class="pr-name">${lift.name}</div>
       <div class="pr-val">${weight > 0 ? weight + ' lb' : '—'}</div>
       ${est1rm > 0 ? `<div class="pr-est1rm">~${est1rm} lb 1RM</div>` : ''}
+    </div>`;
+  }
+  html += `</div>`;
+
+  // Achievements
+  html += `<div class="section-label">ACHIEVEMENTS (${XPEngine.getState().unlockedAchievements.length}/${ACHIEVEMENTS.length})</div>`;
+  html += `<div class="ach-grid">`;
+  for (const ach of ACHIEVEMENTS) {
+    const unlocked = XPEngine.isUnlocked(ach.id);
+    html += `<div class="ach-card ${unlocked ? 'unlocked' : 'locked'}" title="${ach.desc}">
+      <span class="ach-icon">${ach.icon}</span>
+      <div class="ach-name">${unlocked ? ach.name : '???'}</div>
     </div>`;
   }
   html += `</div>`;
