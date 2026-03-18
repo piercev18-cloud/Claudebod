@@ -1,47 +1,97 @@
-// CLAUDEBOD - Session Logic
+// CLAUDEBOD - Session Logic v2
 'use strict';
 
 const Session = (() => {
-  // In-memory session state: { [exerciseId]: { sets: [{weight, reps, done}] } }
-  let currentDate = getTodayDateString();
-  let sessionData = {};
+  let currentDate = getTodayString();
+  let sessionData  = {};  // { [exId]: { sets: [{weight, reps, done, effortValue}] } }
+  let mesoState    = null;
+  let swapOverrides = {}; // { [exId]: swappedToName }
 
-  function getTodayDateString() {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
+  function getTodayString() {
+    return new Date().toISOString().split('T')[0];
   }
 
-  // Calculate recommended weight for an exercise based on last session
-  async function getRecommendedWeight(exercise) {
-    const lastSession = await Store.getLastSessionForExercise(exercise.id, currentDate);
+  // ── Mesocycle ──────────────────────────────────────────────────────────────
 
-    if (!lastSession || !lastSession.sets || lastSession.sets.length === 0) {
-      return exercise.seedWeight;
+  async function loadMesoState() {
+    mesoState = await Store.getMesocycleState();
+    return mesoState;
+  }
+
+  async function advanceMesoWeek() {
+    if (!mesoState) await loadMesoState();
+    const meso = MESOCYCLES[mesoState.mesoIndex % MESOCYCLES.length];
+    const totalWeeks = meso.phases.reduce((s, p) => s + p.weeks, 0);
+    let nextWeek = mesoState.weekNumber + 1;
+    let nextMeso = mesoState.mesoIndex;
+    if (nextWeek > totalWeeks) { nextWeek = 1; nextMeso++; }
+    mesoState = { mesoIndex: nextMeso, weekNumber: nextWeek, startDate: currentDate };
+    await Store.setMesocycleState(mesoState);
+    return mesoState;
+  }
+
+  function getCurrentPhaseInfo() {
+    if (!mesoState) return null;
+    return getMesoPhaseInfo(mesoState);
+  }
+
+  // ── Prescriptive Weight ────────────────────────────────────────────────────
+  // Priority: 1RM-based if available, otherwise last-session + progression
+
+  async function getPrescriptiveWeight(exercise) {
+    if (!mesoState) await loadMesoState();
+    const phaseInfo = getCurrentPhaseInfo();
+
+    // Try 1RM-based prescription
+    const est1RM = await Store.getEstimated1RM(exercise.id);
+    if (est1RM > 0 && phaseInfo) {
+      const targetIntensity = phaseInfo.intensity;
+      const prescribed = roundToNearest(est1RM * targetIntensity);
+      // Make sure it's not below seed weight
+      return Math.max(prescribed, exercise.seedWeight);
     }
 
-    const doneSets = lastSession.sets.filter(s => s.done && s.reps != null);
-    if (doneSets.length === 0) return exercise.seedWeight;
+    // Fallback: last session + progression + mesocycle weekly increase
+    const lastSession = await Store.getLastSessionForExercise(exercise.id, currentDate);
+    if (!lastSession || !lastSession.sets) return exercise.seedWeight;
 
-    const lastWeight = doneSets[0].weight || exercise.seedWeight;
+    const doneSets = lastSession.sets.filter(s => s.done && s.weight != null);
+    if (!doneSets.length) return exercise.seedWeight;
+
+    const lastWeight = doneSets[0].weight;
     const [minReps, maxReps] = exercise.repRange;
-
-    // Check if all sets hit top of range
     const allHitTop = doneSets.every(s => s.reps >= maxReps);
-    // Check if 2+ sets failed bottom of range
-    const failedCount = doneSets.filter(s => s.reps < minReps).length;
-
+    const failCount  = doneSets.filter(s => s.reps < minReps).length;
     const prog = PROGRAM.progression[exercise.type] || PROGRAM.progression.compound;
 
-    if (allHitTop) {
-      return Math.round(lastWeight + prog.increase);
-    } else if (failedCount >= 2) {
-      return Math.round(lastWeight * (1 - prog.decrease));
-    } else {
-      return lastWeight;
+    // Get average recent effort to modulate progression
+    const avgEffort = await Store.getAvgRecentEffort(exercise.id);
+
+    let recommended = lastWeight;
+    if (allHitTop || avgEffort <= 1.5) {
+      // Progressive increase — size based on mesocycle phase
+      const weeklyInc = phaseInfo ? (phaseInfo.phase.weeklyIncrease[exercise.type] || prog.increase) : prog.increase;
+      recommended = lastWeight + weeklyInc;
+    } else if (failCount >= 2 || avgEffort >= 4) {
+      recommended = Math.round(lastWeight * (1 - prog.decrease));
     }
+    // else: hold at last weight
+
+    return roundToNearest(Math.max(recommended, exercise.seedWeight));
   }
 
-  // Get RPE label based on reps vs rep range
+  // ── Effort Adjustment (within-session) ────────────────────────────────────
+  // Given the current set's weight and an effort rating, compute next set weight
+
+  function getEffortAdjustedWeight(currentWeight, effortValue, exerciseType) {
+    const level = EFFORT_LEVELS[effortValue];
+    if (!level || level.nextSetAdj === 0) return currentWeight;
+    const adjusted = currentWeight * (1 + level.nextSetAdj);
+    return roundToNearest(Math.max(adjusted, 5));
+  }
+
+  // ── RPE Labels ────────────────────────────────────────────────────────────
+
   function getRPELabel(reps, repRange) {
     const [min, max] = repRange;
     const r = parseInt(reps);
@@ -52,94 +102,139 @@ const Session = (() => {
   }
 
   function getRPEClass(reps, repRange) {
-    const label = getRPELabel(reps, repRange);
-    if (label === 'EASY') return 'rpe-easy';
-    if (label === 'ON TARGET') return 'rpe-target';
-    if (label === 'TOO HEAVY') return 'rpe-heavy';
-    return '';
+    const l = getRPELabel(reps, repRange);
+    return l === 'EASY' ? 'rpe-easy' : l === 'ON TARGET' ? 'rpe-target' : l ? 'rpe-heavy' : '';
   }
 
-  // Load session data for today from DB
+  // ── Session Load ──────────────────────────────────────────────────────────
+
   async function loadSessionForDate(date) {
     currentDate = date;
     sessionData = {};
+    swapOverrides = {};
+    await loadMesoState();
+
     const dow = new Date(date + 'T12:00:00').getDay();
     const exercises = getExercisesForDay(dow);
 
     for (const ex of exercises) {
       const log = await Store.getSetLog(ex.id, date);
-      if (log && log.sets) {
-        sessionData[ex.id] = { sets: log.sets };
-      }
+      if (log && log.sets) sessionData[ex.id] = { sets: log.sets };
+
+      const swap = await Store.getActiveSwap(ex.id);
+      if (swap && swap.date === date) swapOverrides[ex.id] = swap.swappedToName;
     }
   }
 
-  // Get sets for an exercise (from memory or initialize)
   async function getSetsForExercise(exercise, date) {
-    if (sessionData[exercise.id]) {
-      return sessionData[exercise.id].sets;
-    }
+    if (sessionData[exercise.id]) return sessionData[exercise.id].sets;
 
-    // Initialize with recommended weight
-    const recWeight = await getRecommendedWeight(exercise);
+    const recWeight = await getPrescriptiveWeight(exercise);
     const sets = Array.from({ length: exercise.sets }, () => ({
-      weight: recWeight,
-      reps: null,
-      done: false
+      weight: recWeight, reps: null, done: false, effortValue: 2
     }));
     sessionData[exercise.id] = { sets };
     return sets;
   }
 
-  // Update a specific set
-  async function updateSet(exerciseId, setIndex, field, value) {
-    if (!sessionData[exerciseId]) return;
-    sessionData[exerciseId].sets[setIndex][field] = value;
+  // ── CRUD on Sets ──────────────────────────────────────────────────────────
 
-    // Persist to DB
+  async function _persist(exerciseId) {
     const dow = new Date(currentDate + 'T12:00:00').getDay();
     await Store.saveSetLog(exerciseId, dow, currentDate, sessionData[exerciseId].sets);
   }
 
-  // Mark a set as done
+  async function updateSet(exerciseId, setIndex, field, value) {
+    if (!sessionData[exerciseId]) return;
+    sessionData[exerciseId].sets[setIndex][field] = value;
+    await _persist(exerciseId);
+  }
+
   async function completeSet(exerciseId, setIndex) {
     if (!sessionData[exerciseId]) return;
     const set = sessionData[exerciseId].sets[setIndex];
     set.done = true;
+    await _persist(exerciseId);
 
-    const dow = new Date(currentDate + 'T12:00:00').getDay();
-    await Store.saveSetLog(exerciseId, dow, currentDate, sessionData[exerciseId].sets);
+    // Save effort rating
+    if (set.effortValue != null) {
+      await Store.saveEffortRating(exerciseId, currentDate, setIndex, set.effortValue, set.weight, set.reps);
+    }
+
+    // If effort was rated, adjust next incomplete set's weight
+    if (set.effortValue !== 2) {
+      const ex = getExerciseById(exerciseId);
+      if (ex) {
+        const sets = sessionData[exerciseId].sets;
+        const nextIdx = sets.findIndex((s, i) => i > setIndex && !s.done);
+        if (nextIdx !== -1) {
+          const adj = getEffortAdjustedWeight(set.weight, set.effortValue, ex.type);
+          sets[nextIdx].weight = adj;
+          await _persist(exerciseId);
+        }
+      }
+    }
   }
 
-  // Unmark a set as done
   async function uncompleteSet(exerciseId, setIndex) {
     if (!sessionData[exerciseId]) return;
     sessionData[exerciseId].sets[setIndex].done = false;
-
-    const dow = new Date(currentDate + 'T12:00:00').getDay();
-    await Store.saveSetLog(exerciseId, dow, currentDate, sessionData[exerciseId].sets);
+    await _persist(exerciseId);
   }
 
-  // Get completion count for an exercise
+  // ── Swap Management ───────────────────────────────────────────────────────
+
+  async function applySwap(exerciseId, swappedToName) {
+    swapOverrides[exerciseId] = swappedToName;
+    await Store.setActiveSwap(exerciseId, swappedToName, currentDate);
+  }
+
+  async function clearSwap(exerciseId) {
+    delete swapOverrides[exerciseId];
+    await Store.clearActiveSwap(exerciseId);
+  }
+
+  function getSwapName(exerciseId) {
+    return swapOverrides[exerciseId] || null;
+  }
+
+  // ── Progress Queries ──────────────────────────────────────────────────────
+
   function getCompletionCount(exerciseId) {
     const data = sessionData[exerciseId];
     if (!data) return { done: 0, total: 0 };
-    const done = data.sets.filter(s => s.done).length;
-    return { done, total: data.sets.length };
+    return { done: data.sets.filter(s => s.done).length, total: data.sets.length };
   }
 
+  // ── Rotation Warning ─────────────────────────────────────────────────────
+
+  async function shouldSuggestRotation(exerciseId, rotationWeeks = 4) {
+    const weeks = await Store.getExerciseWeeksCount(exerciseId);
+    return weeks >= rotationWeeks;
+  }
+
+  // ── Public API ────────────────────────────────────────────────────────────
   return {
-    getTodayDateString,
-    getRecommendedWeight,
+    getTodayString,
+    loadSessionForDate,
+    loadMesoState,
+    advanceMesoWeek,
+    getCurrentPhaseInfo,
+    getPrescriptiveWeight,
+    getEffortAdjustedWeight,
     getRPELabel,
     getRPEClass,
-    loadSessionForDate,
     getSetsForExercise,
     updateSet,
     completeSet,
     uncompleteSet,
+    applySwap,
+    clearSwap,
+    getSwapName,
     getCompletionCount,
+    shouldSuggestRotation,
     get currentDate() { return currentDate; },
-    get sessionData() { return sessionData; },
+    get sessionData()  { return sessionData; },
+    get mesoState()    { return mesoState; },
   };
 })();

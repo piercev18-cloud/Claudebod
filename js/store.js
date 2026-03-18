@@ -1,112 +1,103 @@
-// CLAUDEBOD - IndexedDB Store
+// CLAUDEBOD - IndexedDB Store v2
 'use strict';
 
 const DB_NAME = 'claudebod';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let db = null;
 
 function openDB() {
   return new Promise((resolve, reject) => {
     if (db) { resolve(db); return; }
-
     const req = indexedDB.open(DB_NAME, DB_VERSION);
 
     req.onupgradeneeded = (e) => {
       const database = e.target.result;
 
-      // Sessions store: { id, date, dow, exerciseId, sets: [{weight, reps, done}] }
+      // ── sessions ──────────────────────────────────────────────────────────
       if (!database.objectStoreNames.contains('sessions')) {
-        const sessStore = database.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
-        sessStore.createIndex('byDate', 'date');
-        sessStore.createIndex('byExercise', 'exerciseId');
-        sessStore.createIndex('byDateExercise', ['date', 'exerciseId']);
+        const s = database.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+        s.createIndex('byDate', 'date');
+        s.createIndex('byExercise', 'exerciseId');
+        s.createIndex('byDateExercise', ['date', 'exerciseId']);
       }
 
-      // Bodyweight store: { id, date, weight }
+      // ── bodyweight ─────────────────────────────────────────────────────────
       if (!database.objectStoreNames.contains('bodyweight')) {
-        const bwStore = database.createObjectStore('bodyweight', { keyPath: 'id', autoIncrement: true });
-        bwStore.createIndex('byDate', 'date', { unique: true });
+        const b = database.createObjectStore('bodyweight', { keyPath: 'id', autoIncrement: true });
+        b.createIndex('byDate', 'date', { unique: true });
       }
 
-      // Settings store: { key, value }
+      // ── settings ───────────────────────────────────────────────────────────
       if (!database.objectStoreNames.contains('settings')) {
         database.createObjectStore('settings', { keyPath: 'key' });
       }
+
+      // ── effort_ratings (NEW v2) ────────────────────────────────────────────
+      // { id, date, exerciseId, setIndex, effortValue, weight, reps }
+      if (!database.objectStoreNames.contains('effort_ratings')) {
+        const ef = database.createObjectStore('effort_ratings', { keyPath: 'id', autoIncrement: true });
+        ef.createIndex('byExercise', 'exerciseId');
+        ef.createIndex('byDate', 'date');
+        ef.createIndex('byDateExercise', ['date', 'exerciseId']);
+      }
+
+      // ── exercise_swaps (NEW v2) ────────────────────────────────────────────
+      // { exerciseId, swappedTo, date } — active swaps for today's session
+      if (!database.objectStoreNames.contains('exercise_swaps')) {
+        const sw = database.createObjectStore('exercise_swaps', { keyPath: 'exerciseId' });
+        sw.createIndex('byDate', 'date');
+      }
     };
 
-    req.onsuccess = (e) => {
-      db = e.target.result;
-      resolve(db);
-    };
-
-    req.onerror = (e) => {
-      reject(e.target.error);
-    };
+    req.onsuccess = (e) => { db = e.target.result; resolve(db); };
+    req.onerror  = (e) => reject(e.target.error);
   });
 }
 
-// Generic helpers
 function tx(storeName, mode = 'readonly') {
   return db.transaction(storeName, mode).objectStore(storeName);
 }
 
-function promisifyRequest(req) {
+function req2p(req) {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror   = () => reject(req.error);
   });
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
 
-// Save a set log entry for a given session date + exercise
 async function saveSetLog(exerciseId, dow, date, sets) {
   await openDB();
   const store = tx('sessions', 'readwrite');
-
-  // Find existing record for this date+exercise
-  const index = store.index('byDateExercise');
-  const existing = await promisifyRequest(index.get([date, exerciseId]));
-
+  const existing = await req2p(store.index('byDateExercise').get([date, exerciseId]));
   if (existing) {
     existing.sets = sets;
-    return promisifyRequest(store.put(existing));
-  } else {
-    return promisifyRequest(store.add({ date, dow, exerciseId, sets }));
+    return req2p(store.put(existing));
   }
+  return req2p(store.add({ date, dow, exerciseId, sets }));
 }
 
-// Get all set logs for a specific exercise on a specific date
 async function getSetLog(exerciseId, date) {
   await openDB();
-  const store = tx('sessions');
-  const index = store.index('byDateExercise');
-  return promisifyRequest(index.get([date, exerciseId]));
+  return req2p(tx('sessions').index('byDateExercise').get([date, exerciseId]));
 }
 
-// Get all set logs for a specific exercise (all time), most recent first
 async function getAllLogsForExercise(exerciseId) {
   await openDB();
-  const store = tx('sessions');
-  const index = store.index('byExercise');
-  const results = await promisifyRequest(index.getAll(exerciseId));
-  return results.sort((a, b) => b.date.localeCompare(a.date));
+  const all = await req2p(tx('sessions').index('byExercise').getAll(exerciseId));
+  return all.sort((a, b) => b.date.localeCompare(a.date));
 }
 
-// Get last completed session log for an exercise (before today)
 async function getLastSessionForExercise(exerciseId, beforeDate) {
-  await openDB();
   const all = await getAllLogsForExercise(exerciseId);
   return all.find(s => s.date < beforeDate && s.sets && s.sets.some(set => set.done)) || null;
 }
 
-// Get all sessions grouped by date, for history view
 async function getAllSessionsByDate() {
   await openDB();
-  const store = tx('sessions');
-  const all = await promisifyRequest(store.getAll());
-
+  const all = await req2p(tx('sessions').getAll());
   const grouped = {};
   for (const entry of all) {
     if (!grouped[entry.date]) grouped[entry.date] = [];
@@ -115,18 +106,101 @@ async function getAllSessionsByDate() {
   return grouped;
 }
 
-// Get best weight for a given exercise across all sessions
-async function getBestWeightForExercise(exerciseId) {
-  await openDB();
+// ── 1RM Estimation ────────────────────────────────────────────────────────────
+
+async function getBestLoggedSet(exerciseId) {
   const all = await getAllLogsForExercise(exerciseId);
-  let best = 0;
+  let best = null;
   for (const session of all) {
     if (!session.sets) continue;
     for (const set of session.sets) {
-      if (set.done && set.weight > best) best = set.weight;
+      if (!set.done || !set.weight || !set.reps) continue;
+      const est1rm = epley1RM(set.weight, set.reps);
+      if (!best || est1rm > epley1RM(best.weight, best.reps)) {
+        best = { weight: set.weight, reps: set.reps, date: session.date, est1rm };
+      }
     }
   }
   return best;
+}
+
+async function getBestWeightForExercise(exerciseId) {
+  const best = await getBestLoggedSet(exerciseId);
+  return best ? best.weight : 0;
+}
+
+async function getEstimated1RM(exerciseId) {
+  const best = await getBestLoggedSet(exerciseId);
+  return best ? best.est1rm : 0;
+}
+
+// ── Effort Ratings ────────────────────────────────────────────────────────────
+
+async function saveEffortRating(exerciseId, date, setIndex, effortValue, weight, reps) {
+  await openDB();
+  const store = tx('effort_ratings', 'readwrite');
+  // Upsert: check for existing
+  const all = await req2p(store.index('byDateExercise').getAll([date, exerciseId]));
+  const existing = all.find(r => r.setIndex === setIndex);
+  if (existing) {
+    existing.effortValue = effortValue; existing.weight = weight; existing.reps = reps;
+    return req2p(store.put(existing));
+  }
+  return req2p(store.add({ date, exerciseId, setIndex, effortValue, weight, reps }));
+}
+
+async function getEffortRatingsForSession(exerciseId, date) {
+  await openDB();
+  return req2p(tx('effort_ratings').index('byDateExercise').getAll([date, exerciseId]));
+}
+
+// Get average effort value for last N sessions of an exercise
+async function getAvgRecentEffort(exerciseId, sessions = 3) {
+  await openDB();
+  const all = await req2p(tx('effort_ratings').index('byExercise').getAll(exerciseId));
+  if (!all.length) return 2; // default average
+  // Group by date
+  const byDate = {};
+  for (const r of all) {
+    if (!byDate[r.date]) byDate[r.date] = [];
+    byDate[r.date].push(r.effortValue);
+  }
+  const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a)).slice(0, sessions);
+  const values = dates.flatMap(d => byDate[d]);
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+// ── Exercise Swaps ────────────────────────────────────────────────────────────
+
+async function getActiveSwap(exerciseId) {
+  await openDB();
+  const record = await req2p(tx('exercise_swaps').get(exerciseId));
+  return record || null;
+}
+
+async function setActiveSwap(exerciseId, swappedToName, date) {
+  await openDB();
+  return req2p(tx('exercise_swaps', 'readwrite').put({ exerciseId, swappedToName, date }));
+}
+
+async function clearActiveSwap(exerciseId) {
+  await openDB();
+  return req2p(tx('exercise_swaps', 'readwrite').delete(exerciseId));
+}
+
+// ── Exercise Rotation ─────────────────────────────────────────────────────────
+
+async function getExerciseWeeksCount(exerciseId) {
+  // Count distinct weeks we've logged this exercise
+  const all = await getAllLogsForExercise(exerciseId);
+  const weeks = new Set();
+  for (const s of all) {
+    if (!s.sets || !s.sets.some(set => set.done)) continue;
+    const d = new Date(s.date + 'T12:00:00');
+    const week = `${d.getFullYear()}-W${String(Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 604800000) + 1).padStart(2,'0')}`;
+    weeks.add(week);
+  }
+  return weeks.size;
 }
 
 // ── Bodyweight ────────────────────────────────────────────────────────────────
@@ -134,21 +208,14 @@ async function getBestWeightForExercise(exerciseId) {
 async function saveBodyweight(date, weight) {
   await openDB();
   const store = tx('bodyweight', 'readwrite');
-  const index = store.index('byDate');
-  const existing = await promisifyRequest(index.get(date));
-
-  if (existing) {
-    existing.weight = weight;
-    return promisifyRequest(store.put(existing));
-  } else {
-    return promisifyRequest(store.add({ date, weight }));
-  }
+  const existing = await req2p(store.index('byDate').get(date));
+  if (existing) { existing.weight = weight; return req2p(store.put(existing)); }
+  return req2p(store.add({ date, weight }));
 }
 
 async function getBodyweightEntries(limit = 30) {
   await openDB();
-  const store = tx('bodyweight');
-  const all = await promisifyRequest(store.getAll());
+  const all = await req2p(tx('bodyweight').getAll());
   return all.sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit);
 }
 
@@ -156,28 +223,51 @@ async function getBodyweightEntries(limit = 30) {
 
 async function getSetting(key, defaultValue = null) {
   await openDB();
-  const store = tx('settings');
-  const result = await promisifyRequest(store.get(key));
+  const result = await req2p(tx('settings').get(key));
   return result ? result.value : defaultValue;
 }
 
 async function setSetting(key, value) {
   await openDB();
-  const store = tx('settings', 'readwrite');
-  return promisifyRequest(store.put({ key, value }));
+  return req2p(tx('settings', 'readwrite').put({ key, value }));
 }
 
-// Export
+// ── Mesocycle State ───────────────────────────────────────────────────────────
+// Stored in settings as key 'mesocycle_state'
+// { mesoIndex: 0, weekNumber: 1, startDate: 'YYYY-MM-DD' }
+
+async function getMesocycleState() {
+  const saved = await getSetting('mesocycle_state');
+  if (saved) return saved;
+  // Default: start of Foundation Block week 1
+  return { mesoIndex: 0, weekNumber: 1, startDate: getTodayString() };
+}
+
+async function setMesocycleState(state) {
+  return setSetting('mesocycle_state', state);
+}
+
+function getTodayString() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
 const Store = {
   open: openDB,
-  saveSetLog,
-  getSetLog,
-  getAllLogsForExercise,
-  getLastSessionForExercise,
-  getAllSessionsByDate,
-  getBestWeightForExercise,
-  saveBodyweight,
-  getBodyweightEntries,
-  getSetting,
-  setSetting,
+  // Sessions
+  saveSetLog, getSetLog, getAllLogsForExercise, getLastSessionForExercise, getAllSessionsByDate,
+  // 1RM
+  getBestLoggedSet, getBestWeightForExercise, getEstimated1RM,
+  // Effort
+  saveEffortRating, getEffortRatingsForSession, getAvgRecentEffort,
+  // Swaps
+  getActiveSwap, setActiveSwap, clearActiveSwap,
+  // Rotation
+  getExerciseWeeksCount,
+  // Bodyweight
+  saveBodyweight, getBodyweightEntries,
+  // Settings
+  getSetting, setSetting,
+  // Mesocycle
+  getMesocycleState, setMesocycleState,
 };
