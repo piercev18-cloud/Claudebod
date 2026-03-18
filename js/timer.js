@@ -17,6 +17,7 @@ const Timer = (() => {
   function playBeep(frequency = 880, duration = 0.15, type = 'sine') {
     try {
       const ctx = getAudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -82,12 +83,6 @@ const Timer = (() => {
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = setInterval(updateBar, 250);
     updateBar();
-
-    // Unlock audio context on first use
-    try {
-      const ctx = getAudioCtx();
-      if (ctx.state === 'suspended') ctx.resume();
-    } catch (e) {}
   }
 
   function dismiss() {
