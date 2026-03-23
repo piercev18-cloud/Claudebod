@@ -37,6 +37,59 @@ const MESOCYCLES = [
   },
 ];
 
+// ── Set Schemes ───────────────────────────────────────────────────────────────
+// Each function returns an array of { weight, targetReps } for every set.
+// `w` = top working weight (from prescription), `n` = set count, `[min,max]` = rep range.
+const SET_SCHEMES = {
+  // Isolation / straight work — same weight, same reps every set
+  straight: (w, n, [, max]) =>
+    Array(n).fill(null).map(() => ({ weight: w, targetReps: max })),
+
+  // Ascending weight, descending reps — strength pyramid
+  // e.g., Back Squat [4,6] × 4: 80%×8, 87%×6, 93%×5, 100%×4
+  pyramid: (w, n, [min, max]) =>
+    Array(n).fill(null).map((_, i) => {
+      const frac = i / (n - 1);
+      return {
+        weight:     roundToNearest(w * (0.80 + frac * 0.20)),
+        targetReps: Math.max(min, Math.round(max + 2 - frac * (max - min + 2))),
+      };
+    }),
+
+  // Build-up to working weight — each set heavier, reps fall from max to min
+  // e.g., RDL [6,8] × 3: 82%×8, 91%×7, 100%×6
+  ramped: (w, n, [min, max]) =>
+    Array(n).fill(null).map((_, i) => {
+      const frac = i / (n - 1);
+      return {
+        weight:     roundToNearest(w * (0.80 + frac * 0.20)),
+        targetReps: Math.max(min, Math.round(max - frac * (max - min))),
+      };
+    }),
+
+  // Olympic technical build — same reps, weight climbs 70→100%
+  // e.g., Snatch Pull [4,4] × 4: 70%×4, 80%×4, 90%×4, 100%×4
+  oly_build: (w, n, [, max]) =>
+    Array(n).fill(null).map((_, i) => {
+      const frac = i / (n - 1);
+      return {
+        weight:     roundToNearest(w * (0.70 + frac * 0.30)),
+        targetReps: max,
+      };
+    }),
+
+  // Hypertrophy descending — opener lighter / more reps, final set heaviest / fewest reps
+  // e.g., Incline DB Press [10,12] × 4: 88%×12, 92%×11, 96%×11, 100%×10
+  descending: (w, n, [min, max]) =>
+    Array(n).fill(null).map((_, i) => {
+      const frac = i / (n - 1);
+      return {
+        weight:     roundToNearest(w * (0.88 + frac * 0.12)),
+        targetReps: Math.max(min, Math.round(max - frac * (max - min))),
+      };
+    }),
+};
+
 // ── Program ───────────────────────────────────────────────────────────────────
 const PROGRAM = {
   days: {
@@ -44,7 +97,7 @@ const PROGRAM = {
     1: {
       name: 'Monday', label: 'Upper Hypertrophy', accent: '#C8F55A', type: 'training',
       exercises: [
-        { id: 'incline_db_press',     name: 'Incline DB Press',          sets: 4, repRange: [10,12], seedWeight: 65,  type: 'compound', pattern: 'h_push',
+        { id: 'incline_db_press',     name: 'Incline DB Press',          sets: 4, repRange: [10,12], seedWeight: 65,  type: 'compound', scheme: 'descending', pattern: 'h_push',
           rotation: ['incline_bb_press','cable_incline_press','db_flat_press','landmine_press'],
           alternatives: [
             { name: 'Incline Barbell Press',  notes: 'Heavier load, bilateral stability' },
@@ -52,7 +105,7 @@ const PROGRAM = {
             { name: 'Flat DB Press',          notes: 'Less upper chest, more total pec volume' },
             { name: 'Landmine Press',         notes: 'Shoulder-friendly arc, unilateral option' },
           ]},
-        { id: 'cable_row_wide',       name: 'Cable Row Wide Grip',       sets: 4, repRange: [10,12], seedWeight: 120, type: 'compound', pattern: 'h_pull',
+        { id: 'cable_row_wide',       name: 'Cable Row Wide Grip',       sets: 4, repRange: [10,12], seedWeight: 120, type: 'compound', scheme: 'descending', pattern: 'h_pull',
           rotation: ['chest_supported_row','t_bar_row','machine_row','seal_row'],
           alternatives: [
             { name: 'Chest-Supported Row',    notes: 'Eliminates lower back fatigue' },
@@ -60,7 +113,7 @@ const PROGRAM = {
             { name: 'Machine Row',            notes: 'Great for fatigue/deload phases' },
             { name: 'Seal Row',               notes: 'Strict, eliminates momentum entirely' },
           ]},
-        { id: 'overhead_press_db',    name: 'Overhead Press DB',         sets: 3, repRange: [12,15], seedWeight: 50,  type: 'compound', pattern: 'v_push',
+        { id: 'overhead_press_db',    name: 'Overhead Press DB',         sets: 3, repRange: [12,15], seedWeight: 50,  type: 'compound', scheme: 'straight', pattern: 'v_push',
           rotation: ['seated_bb_ohp','arnold_press','landmine_ohp','cable_ohp'],
           alternatives: [
             { name: 'Seated Barbell OHP',     notes: 'Higher load potential, bilateral' },
@@ -68,7 +121,7 @@ const PROGRAM = {
             { name: 'Landmine OHP',           notes: 'Shoulder-friendly, unilateral variation' },
             { name: 'Cable Single-Arm OHP',   notes: 'Anti-lateral flexion demand added' },
           ]},
-        { id: 'lat_pulldown',         name: 'Lat Pulldown',              sets: 3, repRange: [12,15], seedWeight: 130, type: 'compound', pattern: 'v_pull',
+        { id: 'lat_pulldown',         name: 'Lat Pulldown',              sets: 3, repRange: [12,15], seedWeight: 130, type: 'compound', scheme: 'straight', pattern: 'v_pull',
           rotation: ['neutral_pulldown','single_arm_pulldown','straight_arm_pulldown','pull_up'],
           alternatives: [
             { name: 'Neutral Grip Pulldown',  notes: 'Elbows path shifts, slightly more bicep' },
@@ -76,7 +129,7 @@ const PROGRAM = {
             { name: 'Straight-Arm Pulldown',  notes: 'Pure lat isolation, no bicep involvement' },
             { name: 'Pull-Up (assisted)',      notes: 'Bodyweight pattern, functional carry-over' },
           ]},
-        { id: 'cable_lateral_raises', name: 'Cable Lateral Raises',      sets: 4, repRange: [15,20], seedWeight: 15,  type: 'isolation', pattern: 'shoulder',
+        { id: 'cable_lateral_raises', name: 'Cable Lateral Raises',      sets: 4, repRange: [15,20], seedWeight: 15,  type: 'isolation', scheme: 'straight', pattern: 'shoulder',
           rotation: ['db_lateral_raise','machine_lateral','lu_raise','cable_y_raise'],
           alternatives: [
             { name: 'DB Lateral Raise',       notes: 'Free weight, natural path' },
@@ -84,7 +137,7 @@ const PROGRAM = {
             { name: 'Leaning DB Lateral',     notes: 'Greater stretch at bottom, better recruitment' },
             { name: 'Cable Y-Raise',          notes: 'Lower trap and rear delt emphasis added' },
           ]},
-        { id: 'incline_curl',         name: 'Incline Curl',              sets: 3, repRange: [12,15], seedWeight: 30,  type: 'isolation', pattern: 'elbow_flex',
+        { id: 'incline_curl',         name: 'Incline Curl',              sets: 3, repRange: [12,15], seedWeight: 30,  type: 'isolation', scheme: 'straight', pattern: 'elbow_flex',
           rotation: ['hammer_curl','spider_curl','cable_curl','preacher_curl'],
           alternatives: [
             { name: 'Hammer Curl',            notes: 'Brachialis dominant, different stimulus' },
@@ -92,7 +145,7 @@ const PROGRAM = {
             { name: 'Cable Curl',             notes: 'Constant tension through full ROM' },
             { name: 'Preacher Curl',          notes: 'Eliminates cheating, pure isolation' },
           ]},
-        { id: 'oh_tricep_ext_cable',  name: 'OH Tricep Ext Cable',       sets: 3, repRange: [12,15], seedWeight: 70,  type: 'isolation', pattern: 'elbow_ext',
+        { id: 'oh_tricep_ext_cable',  name: 'OH Tricep Ext Cable',       sets: 3, repRange: [12,15], seedWeight: 70,  type: 'isolation', scheme: 'straight', pattern: 'elbow_ext',
           rotation: ['skull_crusher','db_oh_tricep','tricep_kickback','jm_press'],
           alternatives: [
             { name: 'Skull Crusher (EZ Bar)', notes: 'Long head emphasis, heavier loading' },
@@ -105,7 +158,7 @@ const PROGRAM = {
     2: {
       name: 'Tuesday', label: 'Lower Strength + Snatch Skill', accent: '#5AF5C8', type: 'training',
       exercises: [
-        { id: 'back_squat',         name: 'Back Squat',           sets: 4, repRange: [4,6],   seedWeight: 225, type: 'compound', pattern: 'squat',
+        { id: 'back_squat',         name: 'Back Squat',           sets: 4, repRange: [4,6],   seedWeight: 225, type: 'compound', scheme: 'pyramid', pattern: 'squat',
           rotation: ['safety_bar_squat','box_squat','paused_squat','hatfield_squat'],
           alternatives: [
             { name: 'Safety Bar Squat',       notes: 'Upper body mobility relief, same stimulus' },
@@ -113,7 +166,7 @@ const PROGRAM = {
             { name: 'Paused Back Squat',      notes: 'Eliminates stretch reflex, raw strength' },
             { name: 'Belt Squat',             notes: 'No spinal load — great for back-off work' },
           ]},
-        { id: 'romanian_deadlift',  name: 'Romanian Deadlift',    sets: 3, repRange: [6,8],   seedWeight: 185, type: 'compound', pattern: 'hip_hinge',
+        { id: 'romanian_deadlift',  name: 'Romanian Deadlift',    sets: 3, repRange: [6,8],   seedWeight: 185, type: 'compound', scheme: 'ramped', pattern: 'hip_hinge',
           rotation: ['single_leg_rdl','stiff_leg_dl','good_morning','nordic_hamstring'],
           alternatives: [
             { name: 'Single-Leg RDL',         notes: 'Unilateral, corrects imbalances + balance' },
@@ -121,7 +174,7 @@ const PROGRAM = {
             { name: 'Good Morning',           notes: 'Barbell on back, heavy hip hinge variation' },
             { name: 'Nordic Hamstring Curl',  notes: 'Eccentric overload, injury prevention focus' },
           ]},
-        { id: 'leg_press',          name: 'Leg Press',            sets: 3, repRange: [10,12], seedWeight: 360, type: 'compound', pattern: 'squat',
+        { id: 'leg_press',          name: 'Leg Press',            sets: 3, repRange: [10,12], seedWeight: 360, type: 'compound', scheme: 'descending', pattern: 'squat',
           rotation: ['hack_squat','spanish_squat','goblet_squat_heavy','v_squat'],
           alternatives: [
             { name: 'Hack Squat',             notes: 'More quad dominant, deeper ROM possible' },
@@ -129,7 +182,7 @@ const PROGRAM = {
             { name: 'V-Squat Machine',        notes: 'Similar to leg press, torso angle varies' },
             { name: 'Spanish Squat',          notes: 'Banded, knee dominant, quad isolation' },
           ]},
-        { id: 'snatch_pull',        name: 'Snatch Pull',          sets: 4, repRange: [4,4],   seedWeight: 155, type: 'oly', pattern: 'oly_pull',
+        { id: 'snatch_pull',        name: 'Snatch Pull',          sets: 4, repRange: [4,4],   seedWeight: 155, type: 'oly', scheme: 'oly_build', pattern: 'oly_pull',
           rotation: ['clean_pull','snatch_deadlift','paused_snatch_pull','halting_snatch_dl'],
           alternatives: [
             { name: 'Clean Pull',             notes: 'Narrower grip pull, different timing' },
@@ -137,7 +190,7 @@ const PROGRAM = {
             { name: 'Paused Snatch Pull',     notes: 'Pause at knee, reinforce position' },
             { name: 'Halting Snatch DL',      notes: 'Pause above knee, extreme position work' },
           ]},
-        { id: 'hang_power_snatch',  name: 'Hang Power Snatch',    sets: 4, repRange: [3,3],   seedWeight: 115, type: 'oly', pattern: 'snatch',
+        { id: 'hang_power_snatch',  name: 'Hang Power Snatch',    sets: 4, repRange: [3,3],   seedWeight: 115, type: 'oly', scheme: 'oly_build', pattern: 'snatch',
           rotation: ['power_snatch','snatch_from_blocks','muscle_snatch','high_pull_snatch'],
           alternatives: [
             { name: 'Power Snatch (floor)',   notes: 'Full range, builds from floor pull' },
@@ -145,7 +198,7 @@ const PROGRAM = {
             { name: 'Muscle Snatch',          notes: 'No feet, shoulder strength + technique' },
             { name: 'Snatch High Pull',       notes: 'No catch, builds pull mechanics and power' },
           ]},
-        { id: 'leg_curl',           name: 'Leg Curl',             sets: 3, repRange: [12,15], seedWeight: 80,  type: 'isolation', pattern: 'knee_flex',
+        { id: 'leg_curl',           name: 'Leg Curl',             sets: 3, repRange: [12,15], seedWeight: 80,  type: 'isolation', scheme: 'straight', pattern: 'knee_flex',
           rotation: ['seated_leg_curl','single_leg_curl','nordic_curl','swiss_ball_curl'],
           alternatives: [
             { name: 'Seated Leg Curl',        notes: 'Greater hip extension, more distal emphasis' },
@@ -153,7 +206,7 @@ const PROGRAM = {
             { name: 'Nordic Hamstring Curl',  notes: 'Eccentric overload for injury prevention' },
             { name: 'Swiss Ball Leg Curl',    notes: 'Stability demand added, functional' },
           ]},
-        { id: 'calf_raise',         name: 'Calf Raise',           sets: 4, repRange: [15,20], seedWeight: 180, type: 'isolation', pattern: 'plantar_flex',
+        { id: 'calf_raise',         name: 'Calf Raise',           sets: 4, repRange: [15,20], seedWeight: 180, type: 'isolation', scheme: 'straight', pattern: 'plantar_flex',
           rotation: ['seated_calf_raise_heavy','donkey_calf_raise','single_leg_calf','calf_press_leg_press'],
           alternatives: [
             { name: 'Donkey Calf Raise',      notes: 'Hip hinge removes load from spine' },
@@ -167,7 +220,7 @@ const PROGRAM = {
     4: {
       name: 'Thursday', label: 'Upper Strength', accent: '#F5A55A', type: 'training',
       exercises: [
-        { id: 'barbell_bench_press',       name: 'Barbell Bench Press',     sets: 4, repRange: [4,6],   seedWeight: 185, type: 'compound', pattern: 'h_push',
+        { id: 'barbell_bench_press',       name: 'Barbell Bench Press',     sets: 4, repRange: [4,6],   seedWeight: 185, type: 'compound', scheme: 'pyramid', pattern: 'h_push',
           rotation: ['close_grip_bench','paused_bench','floor_press','db_bench_heavy'],
           alternatives: [
             { name: 'Close Grip Bench Press', notes: 'Tricep emphasis, same pattern' },
@@ -175,7 +228,7 @@ const PROGRAM = {
             { name: 'Floor Press',            notes: 'Limits ROM, great for tricep lockout' },
             { name: 'DB Bench (heavy)',       notes: 'More ROM, independent arm movement' },
           ]},
-        { id: 'pendlay_row',               name: 'Pendlay Row',             sets: 4, repRange: [4,6],   seedWeight: 165, type: 'compound', pattern: 'h_pull',
+        { id: 'pendlay_row',               name: 'Pendlay Row',             sets: 4, repRange: [4,6],   seedWeight: 165, type: 'compound', scheme: 'pyramid', pattern: 'h_pull',
           rotation: ['yates_row','barbell_row_strict','meadows_row','chest_supported_t_bar'],
           alternatives: [
             { name: 'Yates Row (supinated)',  notes: 'More bicep involvement, shorter ROM' },
@@ -183,7 +236,7 @@ const PROGRAM = {
             { name: 'Meadows Row',            notes: 'Unilateral, massive lat stretch' },
             { name: 'Chest-Supported T-Bar',  notes: 'Removes lower back, strict upper back' },
           ]},
-        { id: 'seated_db_shoulder_press',  name: 'Seated DB Shoulder Press',sets: 3, repRange: [6,8],   seedWeight: 60,  type: 'compound', pattern: 'v_push',
+        { id: 'seated_db_shoulder_press',  name: 'Seated DB Shoulder Press',sets: 3, repRange: [6,8],   seedWeight: 60,  type: 'compound', scheme: 'ramped', pattern: 'v_push',
           rotation: ['standing_bb_press','push_press_light','z_press','log_press'],
           alternatives: [
             { name: 'Standing Barbell Press', notes: 'Core demand higher, full body press' },
@@ -191,7 +244,7 @@ const PROGRAM = {
             { name: 'Push Press (light)',     notes: 'Speed strength development, leg drive used' },
             { name: 'Single-Arm DB Press',    notes: 'Unilateral, anti-lateral flexion demand' },
           ]},
-        { id: 'weighted_pull_up',          name: 'Weighted Pull-Up',        sets: 3, repRange: [5,7],   seedWeight: 25,  type: 'compound', pattern: 'v_pull',
+        { id: 'weighted_pull_up',          name: 'Weighted Pull-Up',        sets: 3, repRange: [5,7],   seedWeight: 25,  type: 'compound', scheme: 'ramped', pattern: 'v_pull',
           rotation: ['weighted_chin_up','band_assisted_pullup','ring_row','neutral_grip_pullup'],
           alternatives: [
             { name: 'Weighted Chin-Up',       notes: 'Supinated grip, more bicep, different stimulus' },
@@ -199,7 +252,7 @@ const PROGRAM = {
             { name: 'Ring Row',               notes: 'Regression, foot elevation increases difficulty' },
             { name: 'Band-Assisted Pull-Up',  notes: 'Higher volume possible with band' },
           ]},
-        { id: 'face_pulls',                name: 'Face Pulls',              sets: 3, repRange: [15,20], seedWeight: 40,  type: 'isolation', pattern: 'shoulder',
+        { id: 'face_pulls',                name: 'Face Pulls',              sets: 3, repRange: [15,20], seedWeight: 40,  type: 'isolation', scheme: 'straight', pattern: 'shoulder',
           rotation: ['band_face_pull','cable_external_rotation','prone_y_raise','db_rear_delt_fly'],
           alternatives: [
             { name: 'Band Face Pull',         notes: 'Anywhere, great for travel or warm-up' },
@@ -207,7 +260,7 @@ const PROGRAM = {
             { name: 'Prone Y-Raise (dumbbell)',notes: 'Lower trap + rear delt, floor or bench' },
             { name: 'DB Rear Delt Fly',       notes: 'Classic rear delt, easy to load up' },
           ]},
-        { id: 'ez_bar_curl',               name: 'EZ Bar Curl',             sets: 3, repRange: [8,10],  seedWeight: 75,  type: 'isolation', pattern: 'elbow_flex',
+        { id: 'ez_bar_curl',               name: 'EZ Bar Curl',             sets: 3, repRange: [8,10],  seedWeight: 75,  type: 'isolation', scheme: 'straight', pattern: 'elbow_flex',
           rotation: ['barbell_curl','db_curl_supinated','concentration_curl','machine_curl'],
           alternatives: [
             { name: 'Barbell Curl',           notes: 'Full supination, maximum bicep peak' },
@@ -215,7 +268,7 @@ const PROGRAM = {
             { name: 'Concentration Curl',     notes: 'Strict isolation, maximal squeeze' },
             { name: 'Machine Curl',           notes: 'Consistent resistance, great for volume' },
           ]},
-        { id: 'tricep_pushdown',           name: 'Tricep Pushdown',         sets: 3, repRange: [10,12], seedWeight: 55,  type: 'isolation', pattern: 'elbow_ext',
+        { id: 'tricep_pushdown',           name: 'Tricep Pushdown',         sets: 3, repRange: [10,12], seedWeight: 55,  type: 'isolation', scheme: 'straight', pattern: 'elbow_ext',
           rotation: ['rope_pushdown','v_bar_pushdown','reverse_pushdown','band_pushdown'],
           alternatives: [
             { name: 'Rope Pushdown',          notes: 'Spreads rope at bottom, full contraction' },
@@ -228,7 +281,7 @@ const PROGRAM = {
     5: {
       name: 'Friday', label: 'Lower Hypertrophy + C&J Power', accent: '#F55A9A', type: 'training',
       exercises: [
-        { id: 'front_squat',          name: 'Front Squat',          sets: 4, repRange: [6,8],   seedWeight: 175, type: 'compound', pattern: 'squat',
+        { id: 'front_squat',          name: 'Front Squat',          sets: 4, repRange: [6,8],   seedWeight: 175, type: 'compound', scheme: 'ramped', pattern: 'squat',
           rotation: ['goblet_squat_heavy','ssa_front_squat','paused_front_squat','zercher_squat'],
           alternatives: [
             { name: 'SSA Front Squat',        notes: 'Arms crossed grip — wrist-friendly option' },
@@ -236,7 +289,7 @@ const PROGRAM = {
             { name: 'Zercher Squat',          notes: 'Crook-of-elbow, high core demand' },
             { name: 'Goblet Squat (heavy)',   notes: 'Accessible, great upright torso drill' },
           ]},
-        { id: 'power_clean',          name: 'Power Clean',          sets: 5, repRange: [3,3],   seedWeight: 165, type: 'oly', pattern: 'clean',
+        { id: 'power_clean',          name: 'Power Clean',          sets: 5, repRange: [3,3],   seedWeight: 165, type: 'oly', scheme: 'oly_build', pattern: 'clean',
           rotation: ['hang_power_clean','clean_from_blocks','muscle_clean','clean_deadlift_speed'],
           alternatives: [
             { name: 'Hang Power Clean',       notes: 'Shorter pull, emphasizes second pull' },
@@ -244,7 +297,7 @@ const PROGRAM = {
             { name: 'Muscle Clean',           notes: 'No re-bend, upper body pull emphasis' },
             { name: 'Clean High Pull',        notes: 'No catch, trains explosive pull mechanics' },
           ]},
-        { id: 'push_press',           name: 'Push Press',           sets: 4, repRange: [4,4],   seedWeight: 145, type: 'oly', pattern: 'v_push',
+        { id: 'push_press',           name: 'Push Press',           sets: 4, repRange: [4,4],   seedWeight: 145, type: 'oly', scheme: 'oly_build', pattern: 'v_push',
           rotation: ['push_jerk','split_jerk','military_press_heavy','db_push_press'],
           alternatives: [
             { name: 'Push Jerk',              notes: 'Catch in quarter squat, more aggressive dip' },
@@ -252,7 +305,7 @@ const PROGRAM = {
             { name: 'DB Push Press',          notes: 'Independent arms, shoulder health focus' },
             { name: 'Strict Military Press',  notes: 'Remove leg drive, pure overhead strength' },
           ]},
-        { id: 'bulgarian_split_squat', name: 'Bulgarian Split Squat', sets: 3, repRange: [10,12], seedWeight: 50,  type: 'compound', pattern: 'squat',
+        { id: 'bulgarian_split_squat', name: 'Bulgarian Split Squat', sets: 3, repRange: [10,12], seedWeight: 50,  type: 'compound', scheme: 'descending', pattern: 'squat',
           rotation: ['db_reverse_lunge','db_step_up','single_leg_leg_press','walking_lunge'],
           alternatives: [
             { name: 'DB Reverse Lunge',       notes: 'More balance control, less hip flexor demand' },
@@ -260,7 +313,7 @@ const PROGRAM = {
             { name: 'Single-Leg Leg Press',   notes: 'Machine stability, unilateral loading' },
             { name: 'Walking Lunge',          notes: 'Dynamic, adds hip flexor stretch' },
           ]},
-        { id: 'leg_extension',        name: 'Leg Extension',        sets: 3, repRange: [15,20], seedWeight: 90,  type: 'isolation', pattern: 'knee_ext',
+        { id: 'leg_extension',        name: 'Leg Extension',        sets: 3, repRange: [15,20], seedWeight: 90,  type: 'isolation', scheme: 'straight', pattern: 'knee_ext',
           rotation: ['sissy_squat','wall_sit','terminal_knee_ext','peterson_step_up'],
           alternatives: [
             { name: 'Sissy Squat',            notes: 'Bodyweight, extreme knee tracking demand' },
@@ -268,7 +321,7 @@ const PROGRAM = {
             { name: 'Wall Sit (weighted)',    notes: 'Isometric quad work, easy to scale' },
             { name: 'Peterson Step-Up',       notes: 'VMO emphasis, single leg, quad dominant' },
           ]},
-        { id: 'nordic_curl',          name: 'Nordic Curl',          sets: 3, repRange: [8,10],  seedWeight: 0,   type: 'isolation', pattern: 'knee_flex',
+        { id: 'nordic_curl',          name: 'Nordic Curl',          sets: 3, repRange: [8,10],  seedWeight: 0,   type: 'isolation', scheme: 'straight', pattern: 'knee_flex',
           rotation: ['lying_leg_curl','seated_leg_curl_slow','swiss_ball_curl','slider_curl'],
           alternatives: [
             { name: 'Lying Leg Curl',         notes: 'Machine, easy to load and progress' },
@@ -276,7 +329,7 @@ const PROGRAM = {
             { name: 'Swiss Ball Leg Curl',    notes: 'Stability demand + hamstring emphasis' },
             { name: 'Slider Leg Curl',        notes: 'Eccentric, nordic variation with less load' },
           ]},
-        { id: 'seated_calf_raise',    name: 'Seated Calf Raise',    sets: 4, repRange: [15,20], seedWeight: 90,  type: 'isolation', pattern: 'plantar_flex',
+        { id: 'seated_calf_raise',    name: 'Seated Calf Raise',    sets: 4, repRange: [15,20], seedWeight: 90,  type: 'isolation', scheme: 'straight', pattern: 'plantar_flex',
           rotation: ['single_leg_seated_calf','banded_seated_calf','donkey_calf_raise','db_seated_calf'],
           alternatives: [
             { name: 'Single-Leg Seated Calf', notes: 'Unilateral — heavier load per leg' },
@@ -289,7 +342,7 @@ const PROGRAM = {
     6: {
       name: 'Saturday', label: 'Full Olympic', accent: '#A55AF5', type: 'training',
       exercises: [
-        { id: 'snatch_or_cj',             name: 'Snatch OR Clean & Jerk',     sets: 6, repRange: [2,3], seedWeight: 145, type: 'oly', pattern: 'snatch',
+        { id: 'snatch_or_cj',             name: 'Snatch OR Clean & Jerk',     sets: 6, repRange: [2,3], seedWeight: 145, type: 'oly', scheme: 'oly_build', pattern: 'snatch',
           rotation: ['full_snatch','full_clean_and_jerk','clean_and_press','snatch_complex'],
           alternatives: [
             { name: 'Full Snatch',            notes: 'Technical, overhead squat receive' },
@@ -297,7 +350,7 @@ const PROGRAM = {
             { name: 'Snatch Complex',         notes: 'Snatch pull + power snatch + OHS as a set' },
             { name: 'Clean & Press',          notes: 'Strict press instead of jerk — more shoulder' },
           ]},
-        { id: 'snatch_balance_jerk_blocks', name: 'Snatch Balance / Jerk Blocks', sets: 3, repRange: [3,3], seedWeight: 125, type: 'oly', pattern: 'snatch',
+        { id: 'snatch_balance_jerk_blocks', name: 'Snatch Balance / Jerk Blocks', sets: 3, repRange: [3,3], seedWeight: 125, type: 'oly', scheme: 'ramped', pattern: 'snatch',
           rotation: ['drop_snatch','overhead_squat','jerk_recovery','jerk_dip_drive'],
           alternatives: [
             { name: 'Drop Snatch',            notes: 'No leg drive, pure footwork + overhead speed' },
@@ -305,7 +358,7 @@ const PROGRAM = {
             { name: 'Jerk Recovery',          notes: 'Heavy overhead walk-in, lockout strength' },
             { name: 'Jerk Dip & Drive',       notes: 'Technique drill, no press, just dip+drive' },
           ]},
-        { id: 'clean_pull_snatch_pull',    name: 'Clean Pull / Snatch Pull',    sets: 3, repRange: [4,4], seedWeight: 195, type: 'oly', pattern: 'oly_pull',
+        { id: 'clean_pull_snatch_pull',    name: 'Clean Pull / Snatch Pull',    sets: 3, repRange: [4,4], seedWeight: 195, type: 'oly', scheme: 'oly_build', pattern: 'oly_pull',
           rotation: ['snatch_deadlift','clean_deadlift','paused_pull','segment_pull'],
           alternatives: [
             { name: 'Snatch Deadlift',        notes: 'Slow pull to reinforce positions' },
@@ -313,7 +366,7 @@ const PROGRAM = {
             { name: 'Paused Pull (knee)',     notes: 'Pause at knee, hold position 2 sec' },
             { name: 'Segment Deadlift',       notes: 'Multiple pause points, extreme position work' },
           ]},
-        { id: 'back_squat_sat',            name: 'Back Squat',                  sets: 3, repRange: [5,5], seedWeight: 195, type: 'compound', pattern: 'squat',
+        { id: 'back_squat_sat',            name: 'Back Squat',                  sets: 3, repRange: [5,5], seedWeight: 195, type: 'compound', scheme: 'straight', pattern: 'squat',
           rotation: ['front_squat_light','overhead_squat','pause_squat','tempo_squat'],
           alternatives: [
             { name: 'Front Squat',            notes: 'Oly-specific carryover, upright torso' },

@@ -92,19 +92,21 @@ const Session = (() => {
   }
 
   // ── RPE Labels ────────────────────────────────────────────────────────────
+  // `targetReps` is the per-set prescribed rep count (from scheme).
 
-  function getRPELabel(reps, repRange) {
-    const [min, max] = repRange;
+  function getRPELabel(reps, targetReps) {
     const r = parseInt(reps);
-    if (isNaN(r)) return '';
-    if (r >= max) return 'EASY';
-    if (r >= min) return 'ON TARGET';
+    const t = parseInt(targetReps);
+    if (isNaN(r) || isNaN(t)) return '';
+    if (r >= t + 2) return 'EASY';
+    if (r >= t)     return 'ON TARGET';
+    if (r >= t - 1) return 'CLOSE';
     return 'TOO HEAVY';
   }
 
-  function getRPEClass(reps, repRange) {
-    const l = getRPELabel(reps, repRange);
-    return l === 'EASY' ? 'rpe-easy' : l === 'ON TARGET' ? 'rpe-target' : l ? 'rpe-heavy' : '';
+  function getRPEClass(reps, targetReps) {
+    const l = getRPELabel(reps, targetReps);
+    return l === 'EASY' ? 'rpe-easy' : l === 'ON TARGET' || l === 'CLOSE' ? 'rpe-target' : l ? 'rpe-heavy' : '';
   }
 
   // ── Session Load ──────────────────────────────────────────────────────────
@@ -129,12 +131,21 @@ const Session = (() => {
     }
   }
 
+  // Build per-set { weight, targetReps } using the exercise's scheme.
+  // The top working weight comes from prescription; scheme distributes around it.
+  function buildSetsFromScheme(exercise, topWeight) {
+    const schemeKey = exercise.scheme || 'straight';
+    const gen = SET_SCHEMES[schemeKey] || SET_SCHEMES.straight;
+    return gen(topWeight, exercise.sets, exercise.repRange);
+  }
+
   async function getSetsForExercise(exercise, date) {
     if (sessionData[exercise.id]) return sessionData[exercise.id].sets;
 
-    const recWeight = await getPrescriptiveWeight(exercise);
-    const sets = Array.from({ length: exercise.sets }, () => ({
-      weight: recWeight, reps: null, done: false, effortValue: 2
+    const topWeight = await getPrescriptiveWeight(exercise);
+    const schemed   = buildSetsFromScheme(exercise, topWeight);
+    const sets = schemed.map(({ weight, targetReps }) => ({
+      weight, reps: null, targetReps, done: false, effortValue: 2,
     }));
     sessionData[exercise.id] = { sets };
     return sets;

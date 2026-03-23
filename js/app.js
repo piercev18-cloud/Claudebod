@@ -20,7 +20,171 @@ window.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
+  // Show onboarding if no profile has been set yet
+  const profile = await Store.getSetting('user_profile', null);
+  if (!profile) showOnboarding();
 });
+
+// ── Onboarding ────────────────────────────────────────────────────────────────
+const ONBOARDING_STEPS = [
+  {
+    key: 'goal',
+    title: 'WHAT\'S YOUR GOAL?',
+    options: [
+      { value: 'mass',  label: 'BUILD MASS',          icon: '🏋️', desc: 'Maximize muscle & strength gains' },
+      { value: 'lean',  label: 'STAY LEAN',            icon: '🔥', desc: 'Retain muscle while cutting body fat' },
+      { value: 'recomp',label: 'BODY RECOMP',          icon: '⚖️', desc: 'Lose fat and build muscle simultaneously' },
+      { value: 'sport', label: 'SPORT PERFORMANCE',    icon: '⚡', desc: 'Athletic output & competition prep' },
+    ],
+  },
+  {
+    key: 'experience',
+    title: 'TRAINING EXPERIENCE',
+    options: [
+      { value: 'beginner',     label: 'BEGINNER',     icon: '🌱', desc: 'Under 1 year of consistent training' },
+      { value: 'intermediate', label: 'INTERMEDIATE', icon: '💪', desc: '1–3 years, solid technique base' },
+      { value: 'advanced',     label: 'ADVANCED',     icon: '🎯', desc: '3–5 years, good movement patterns' },
+      { value: 'competitor',   label: 'COMPETITOR',   icon: '🏆', desc: '5+ years, competes or trains to compete' },
+    ],
+  },
+  {
+    key: 'equipment',
+    title: 'EQUIPMENT ACCESS',
+    options: [
+      { value: 'full_gym', label: 'FULL GYM',      icon: '🏢', desc: 'Commercial gym with all equipment' },
+      { value: 'home',     label: 'HOME GYM',       icon: '🏠', desc: 'Barbell, rack, dumbbells at home' },
+      { value: 'minimal',  label: 'MINIMAL',        icon: '🎽', desc: 'Dumbbells, bands, or bodyweight only' },
+    ],
+  },
+  {
+    key: 'stats',
+    title: 'YOUR STATS',
+    isStats: true,
+  },
+];
+
+let onboardingData = {};
+let onboardingStep = 0;
+
+function showOnboarding() {
+  onboardingData = {};
+  onboardingStep = 0;
+  renderOnboardingStep();
+}
+
+function renderOnboardingStep() {
+  const existing = document.getElementById('onboarding-overlay');
+  if (existing) existing.remove();
+
+  const step = ONBOARDING_STEPS[onboardingStep];
+  const total = ONBOARDING_STEPS.length;
+  const dots = Array(total).fill(null).map((_, i) =>
+    `<span class="ob-dot${i === onboardingStep ? ' active' : ''}"></span>`).join('');
+
+  let bodyHtml = '';
+  if (step.isStats) {
+    bodyHtml = `
+      <div class="ob-stats-form">
+        <div class="ob-field">
+          <label class="ob-label">SEX</label>
+          <div class="ob-sex-row">
+            <button class="ob-sex-btn${onboardingData.sex === 'M' ? ' selected' : ''}" data-sex="M">MALE</button>
+            <button class="ob-sex-btn${onboardingData.sex === 'F' ? ' selected' : ''}" data-sex="F">FEMALE</button>
+          </div>
+        </div>
+        <div class="ob-field">
+          <label class="ob-label">AGE</label>
+          <input class="ob-input" id="ob-age" type="number" inputmode="numeric" placeholder="28" min="13" max="99" value="${onboardingData.age || ''}">
+        </div>
+        <div class="ob-field">
+          <label class="ob-label">HEIGHT (inches)</label>
+          <input class="ob-input" id="ob-height" type="number" inputmode="decimal" placeholder='72 (= 6\'0")' min="48" max="96" value="${onboardingData.height || ''}">
+        </div>
+        <div class="ob-field">
+          <label class="ob-label">WEIGHT (lbs)</label>
+          <input class="ob-input" id="ob-weight" type="number" inputmode="decimal" placeholder="195" min="50" max="500" value="${onboardingData.weight || ''}">
+        </div>
+        <p class="ob-stats-note">Used for nutrition targets. All data stays on your device.</p>
+      </div>`;
+  } else {
+    bodyHtml = step.options.map(opt => `
+      <button class="ob-option${onboardingData[step.key] === opt.value ? ' selected' : ''}"
+        data-key="${step.key}" data-value="${opt.value}">
+        <span class="ob-opt-icon">${opt.icon}</span>
+        <div class="ob-opt-text">
+          <span class="ob-opt-label">${opt.label}</span>
+          <span class="ob-opt-desc">${opt.desc}</span>
+        </div>
+      </button>`).join('');
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'onboarding-overlay';
+  overlay.innerHTML = `
+    <div class="ob-card">
+      <div class="ob-header">
+        <div class="ob-logo">CLAUDEBOD</div>
+        <div class="ob-dots">${dots}</div>
+      </div>
+      <h2 class="ob-title">${step.title}</h2>
+      <div class="ob-body">${bodyHtml}</div>
+      <div class="ob-footer">
+        ${onboardingStep > 0 ? `<button class="ob-back-btn" id="ob-back">‹ BACK</button>` : '<span></span>'}
+        <button class="ob-next-btn" id="ob-next">${onboardingStep < total - 1 ? 'NEXT ›' : 'START TRAINING'}</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  // Option buttons
+  overlay.querySelectorAll('.ob-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+      overlay.querySelectorAll('.ob-option').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      onboardingData[btn.dataset.key] = btn.dataset.value;
+    });
+  });
+
+  // Sex buttons (stats step)
+  overlay.querySelectorAll('.ob-sex-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      overlay.querySelectorAll('.ob-sex-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      onboardingData.sex = btn.dataset.sex;
+    });
+  });
+
+  // Back
+  document.getElementById('ob-back')?.addEventListener('click', () => {
+    onboardingStep--;
+    renderOnboardingStep();
+  });
+
+  // Next / Finish
+  document.getElementById('ob-next').addEventListener('click', async () => {
+    const step = ONBOARDING_STEPS[onboardingStep];
+
+    if (step.isStats) {
+      // Collect stats (all optional)
+      onboardingData.age    = parseInt(document.getElementById('ob-age').value)    || null;
+      onboardingData.height = parseFloat(document.getElementById('ob-height').value) || null;
+      onboardingData.weight = parseFloat(document.getElementById('ob-weight').value) || null;
+      await Store.setSetting('user_profile', onboardingData);
+      document.getElementById('onboarding-overlay').remove();
+      return;
+    }
+
+    if (!onboardingData[step.key]) {
+      // Highlight that selection is needed
+      overlay.querySelector('.ob-body').style.animation = 'ob-shake 0.3s ease';
+      setTimeout(() => overlay.querySelector('.ob-body').style.animation = '', 300);
+      return;
+    }
+
+    onboardingStep++;
+    renderOnboardingStep();
+  });
+}
 
 // ── Install Prompt ────────────────────────────────────────────────────────────
 function setupInstallPrompt() {
@@ -337,11 +501,15 @@ function renderBodyweightCard() {
     </div>`;
 }
 
+const SCHEME_LABELS = { pyramid: 'PYRAMID', ramped: 'RAMP', oly_build: 'BUILD', descending: 'DESC', straight: '' };
+
 function renderExerciseCard(ex, accent) {
   const counts  = Session.getCompletionCount(ex.id);
   const allDone = counts.total > 0 && counts.done === counts.total;
   const [minR, maxR] = ex.repRange;
   const repStr  = minR === maxR ? `${minR}` : `${minR}–${maxR}`;
+  const scheme  = SCHEME_LABELS[ex.scheme] || '';
+  const metaScheme = scheme ? `<span class="scheme-tag">${scheme}</span>` : '';
   const swapName = Session.getSwapName(ex.id);
   const displayName = swapName ? `${swapName} <span class="swap-badge">SWAP</span>` : ex.name;
 
@@ -349,7 +517,7 @@ function renderExerciseCard(ex, accent) {
     <div class="exercise-card${allDone ? ' all-done' : ''}" data-exercise-id="${ex.id}" style="--accent:${accent}">
       <div class="ex-card-left">
         <div class="ex-name">${displayName}</div>
-        <div class="ex-meta">${ex.sets} × ${repStr} reps · <span class="ex-type-tag">${ex.type.toUpperCase()}</span></div>
+        <div class="ex-meta">${ex.sets} sets · ${repStr} reps ${metaScheme}· <span class="ex-type-tag">${ex.type.toUpperCase()}</span></div>
       </div>
       <div class="ex-card-right">
         <div class="ex-progress${allDone ? ' done' : ''}">${counts.done}/${counts.total}</div>
@@ -368,11 +536,12 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
 
   const accent      = day.accent;
   const sets        = await Session.getSetsForExercise(ex, Session.currentDate);
-  const recWeight   = await Session.getPrescriptiveWeight(ex);
+  const topWeight   = sets.length ? sets[sets.length - 1].weight : await Session.getPrescriptiveWeight(ex);
   const swapName    = Session.getSwapName(ex.id);
   const displayName = swapName || ex.name;
   const [minR, maxR] = ex.repRange;
   const repStr      = minR === maxR ? `${minR}` : `${minR}–${maxR}`;
+  const schemeLabel = SCHEME_LABELS[ex.scheme] || '';
   const phaseInfo   = Session.getCurrentPhaseInfo();
 
   // Check rotation suggestion
@@ -386,7 +555,7 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
       </div>
       <div class="ex-detail-header">
         <h2 class="ex-detail-name">${displayName}${swapName ? ' <span class="swap-active-badge">SWAPPED</span>' : ''}</h2>
-        <div class="ex-detail-meta">${ex.sets} sets · ${repStr} reps · ${ex.type}</div>
+        <div class="ex-detail-meta">${ex.sets} sets · ${repStr} reps · ${ex.type}${schemeLabel ? ` · ${schemeLabel}` : ''}</div>
       </div>`;
 
   // Rotation suggestion
@@ -403,35 +572,36 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
       </div>`;
   }
 
-  // Prescriptive weight banner
+  // Working weight + scheme banner
   html += `
       <div class="rec-weight-banner">
         <div class="rec-left">
-          <span class="rec-label">PRESCRIBED WEIGHT</span>
+          <span class="rec-label">WORKING WEIGHT${schemeLabel ? ` · ${schemeLabel}` : ''}</span>
           ${phaseInfo ? `<span class="rec-phase">${phaseInfo.phase.name.toUpperCase()} · ${phaseInfo.phase.rpeTarget}</span>` : ''}
         </div>
-        <span class="rec-value">${recWeight} lb</span>
+        <span class="rec-value">${topWeight} lb</span>
       </div>`;
 
   // Sets
   html += `<div class="sets-container">`;
   for (let i = 0; i < sets.length; i++) {
-    const set = sets[i];
-    const rpeLabel = set.reps != null ? Session.getRPELabel(set.reps, ex.repRange) : '';
-    const rpeClass = set.reps != null ? Session.getRPEClass(set.reps, ex.repRange) : '';
-    const w = set.weight != null ? set.weight : recWeight;
-    const r = set.reps != null ? set.reps : '';
-    const effort = set.effortValue != null ? set.effortValue : 2;
+    const set       = sets[i];
+    const tgt       = set.targetReps ?? maxR;  // per-set prescribed rep count
+    const rpeLabel  = set.reps != null ? Session.getRPELabel(set.reps, tgt) : '';
+    const rpeClass  = set.reps != null ? Session.getRPEClass(set.reps, tgt) : '';
+    const w         = set.weight != null ? set.weight : topWeight;
+    const r         = set.reps != null ? set.reps : '';
+    const effort    = set.effortValue != null ? set.effortValue : 2;
 
     html += `
-      <div class="set-row${set.done ? ' set-done' : ''}" data-set-index="${i}">
+      <div class="set-row${set.done ? ' set-done' : ''}" data-set-index="${i}" data-target-reps="${tgt}">
         <div class="set-num">S${i + 1}</div>
         <div class="set-inputs">
           <input type="number" class="set-weight" data-index="${i}"
             value="${w}" placeholder="lb" step="2.5" min="0" inputmode="decimal"${set.done ? ' disabled' : ''}>
           <span class="set-unit">lb</span>
           <input type="number" class="set-reps" data-index="${i}"
-            value="${r}" placeholder="${repStr}" min="0" max="99" inputmode="numeric"${set.done ? ' disabled' : ''}>
+            value="${r}" placeholder="${tgt}" min="0" max="99" inputmode="numeric"${set.done ? ' disabled' : ''}>
           <span class="set-unit">reps</span>
           <span class="rpe-badge ${rpeClass}" data-index="${i}">${rpeLabel}</span>
         </div>
@@ -454,13 +624,13 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
   html += `</div></div>`;
 
   container.innerHTML = html;
-  attachExerciseDetailEvents(exerciseId, ex, sets, recWeight);
+  attachExerciseDetailEvents(exerciseId, ex, sets, maxR);
 
   // Swap modal (hidden, outside detail)
   renderSwapModal(ex);
 }
 
-function attachExerciseDetailEvents(exerciseId, ex, sets, recWeight) {
+function attachExerciseDetailEvents(exerciseId, ex, sets, maxR) {
   const container = document.getElementById('exercise-detail-container');
   if (!container) return;
 
@@ -501,16 +671,18 @@ function attachExerciseDetailEvents(exerciseId, ex, sets, recWeight) {
     });
   });
 
-  // Reps inputs → RPE badge
+  // Reps inputs → RPE badge (uses per-set targetReps from data attribute)
   container.querySelectorAll('.set-reps').forEach(input => {
     input.addEventListener('input', async (e) => {
       const idx  = parseInt(e.target.dataset.index);
       const reps = parseInt(e.target.value);
       await Session.updateSet(exerciseId, idx, 'reps', isNaN(reps) ? null : reps);
-      const badge = container.querySelector(`.rpe-badge[data-index="${idx}"]`);
+      const badge   = container.querySelector(`.rpe-badge[data-index="${idx}"]`);
+      const setRow  = container.querySelector(`.set-row[data-set-index="${idx}"]`);
+      const tgt     = parseInt(setRow?.dataset.targetReps) || maxR;
       if (badge) {
-        badge.textContent = isNaN(reps) ? '' : Session.getRPELabel(reps, ex.repRange);
-        badge.className = `rpe-badge ${isNaN(reps) ? '' : Session.getRPEClass(reps, ex.repRange)}`;
+        badge.textContent = isNaN(reps) ? '' : Session.getRPELabel(reps, tgt);
+        badge.className   = `rpe-badge ${isNaN(reps) ? '' : Session.getRPEClass(reps, tgt)}`;
       }
     });
   });
