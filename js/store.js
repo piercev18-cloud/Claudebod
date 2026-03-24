@@ -251,6 +251,52 @@ function getTodayString() {
   return new Date().toISOString().split('T')[0];
 }
 
+// ── Known Maxes ───────────────────────────────────────────────────────────────
+// User-entered 1RM for key lifts — used as primary prescription source.
+
+async function setKnownMax(exerciseId, weight) {
+  const maxes = (await getSetting('known_maxes', null)) || {};
+  if (weight > 0) maxes[exerciseId] = weight;
+  else delete maxes[exerciseId];
+  return setSetting('known_maxes', maxes);
+}
+
+async function getKnownMax(exerciseId) {
+  const maxes = (await getSetting('known_maxes', null)) || {};
+  return maxes[exerciseId] || 0;
+}
+
+async function getAllKnownMaxes() {
+  return (await getSetting('known_maxes', null)) || {};
+}
+
+// ── RPE-Adjusted 1RM ──────────────────────────────────────────────────────────
+// Uses effort rating to estimate reps in reserve, then computes a truer 1RM.
+// RIR per effort value: Very Easy=5, Easy=3, Average=2, Hard=1, Max=0, Fail=null
+const EFFORT_RIR = [5, 3, 2, 1, 0, null];
+
+async function getBestRPEAdjusted1RM(exerciseId) {
+  const all = await getAllLogsForExercise(exerciseId);
+  let best = null;
+  for (const session of all) {
+    if (!session.sets) continue;
+    for (const set of session.sets) {
+      if (!set.done || !set.weight || !set.reps || set.effortValue == null) continue;
+      const rir = EFFORT_RIR[set.effortValue];
+      if (rir === null) continue; // failed set
+      const effectiveReps = set.reps + rir;
+      const adj1RM = epley1RM(set.weight, effectiveReps);
+      if (!best || adj1RM > best.adj1RM) {
+        best = {
+          weight: set.weight, reps: set.reps, effortValue: set.effortValue,
+          rir, effectiveReps, adj1RM, date: session.date,
+        };
+      }
+    }
+  }
+  return best;
+}
+
 // ── Export ────────────────────────────────────────────────────────────────────
 const Store = {
   open: openDB,
@@ -270,4 +316,8 @@ const Store = {
   getSetting, setSetting,
   // Mesocycle
   getMesocycleState, setMesocycleState,
+  // Known maxes
+  setKnownMax, getKnownMax, getAllKnownMaxes,
+  // RPE-adjusted 1RM
+  getBestRPEAdjusted1RM,
 };

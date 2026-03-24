@@ -549,5 +549,55 @@ details[open] .accordion-chevron{transform:rotate(90deg)}
 .ob-stats-note{font-family:var(--font-b);font-size:11px;color:var(--text-dim);text-align:center}
 @keyframes ob-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 
+/* ── Exercise LOG / HISTORY Tabs ───────────────────────────────── */
+.ex-tabs{display:flex;border-bottom:2px solid var(--border);margin:0 0 2px}
+.ex-tab-btn{flex:1;padding:10px;background:transparent;border:none;border-bottom:3px solid transparent;font-family:var(--font-pixel);font-size:8px;color:var(--text-muted);cursor:pointer;margin-bottom:-2px}
+.ex-tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.ex-tab-panel.hidden{display:none}
+
+/* ── Exercise History Panel ─────────────────────────────────────── */
+.ex-hist-list{display:flex;flex-direction:column;gap:6px;padding:8px 0}
+.ex-hist-empty{font-family:var(--font-b);font-size:13px;color:var(--text-dim);text-align:center;padding:24px 0}
+.ex-hist-entry{background:var(--surface2);border:1px solid var(--border);padding:10px 12px}
+.ex-hist-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.ex-hist-date{font-family:var(--font-pixel);font-size:7px;color:var(--text-muted)}
+.ex-hist-1rm{font-family:var(--font-pixel);font-size:7px;color:var(--neon-cyan)}
+.ex-hist-sets{font-family:var(--font-h);font-size:14px;font-weight:600;color:var(--text);line-height:1.5}
+
+/* ── Exercise Max Card (history tab) ───────────────────────────── */
+.ex-max-card{background:var(--surface2);border:1px solid var(--border);padding:12px 14px;margin-bottom:8px}
+.ex-max-title{font-family:var(--font-pixel);font-size:7px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:8px}
+.ex-max-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.ex-max-label{font-family:var(--font-b);font-size:13px;color:var(--text-muted)}
+.ex-max-val{font-family:var(--font-h);font-size:20px;font-weight:800;color:var(--text)}
+.ex-max-pct{font-family:var(--font-pixel);font-size:8px;color:var(--neon-cyan);margin-left:6px}
+.ex-max-status{font-family:var(--font-b);font-size:12px;margin-top:6px}
+.mstatus-fire{color:var(--neon-orange)}
+.mstatus-good{color:var(--neon-green)}
+.mstatus-warn{color:var(--neon-yellow)}
+.mstatus-low{color:var(--neon-pink)}
+.mstatus-info{color:var(--text-muted)}
+.ex-max-detail{font-family:var(--font-b);font-size:11px;color:var(--text-dim);margin-top:3px}
+.ex-max-empty{font-family:var(--font-b);font-size:13px;color:var(--text-dim);text-align:center;padding:16px 0}
+
+/* ── Progress Tab — Known Maxes Section ────────────────────────── */
+.section-sub{font-family:var(--font-b);font-size:13px;color:var(--text-dim);margin-bottom:10px}
+.maxes-list{display:flex;flex-direction:column;gap:8px}
+.max-row{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border);padding:10px 12px}
+.max-row-left{flex:1;display:flex;flex-direction:column;gap:3px}
+.max-lift-name{font-family:var(--font-h);font-size:15px;font-weight:700;color:var(--text)}
+.max-pct-badge{display:inline-block;font-family:var(--font-pixel);font-size:6px;padding:2px 5px;background:rgba(0,240,255,.1);border:1px solid var(--neon-cyan);color:var(--neon-cyan)}
+.max-row-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.max-known-wrap{display:flex;align-items:center;gap:4px}
+.max-input{
+  width:72px;text-align:right;
+  background:var(--surface3);border:2px solid var(--border2);
+  color:var(--text);font-family:var(--font-h);font-size:18px;font-weight:800;
+  padding:4px 6px;
+}
+.max-input:focus{outline:none;border-color:var(--neon-green)}
+.max-input-unit{font-family:var(--font-b);font-size:12px;color:var(--text-dim)}
+.max-perceived{font-family:var(--font-b);font-size:11px;color:var(--text-dim)}
+
 /* ── Scrollbar + iOS ───────────────────────────────────────────── */
 @supports(-webkit-overflow-scrolling:touch){#main-content{-webkit-overflow-scrolling:touch}}

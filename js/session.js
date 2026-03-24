@@ -37,18 +37,24 @@ const Session = (() => {
   }
 
   // ── Prescriptive Weight ────────────────────────────────────────────────────
-  // Priority: 1RM-based if available, otherwise last-session + progression
+  // Priority: 1) user-entered known max  2) logged 1RM estimate  3) last session + progression
 
   async function getPrescriptiveWeight(exercise) {
     if (!mesoState) await loadMesoState();
     const phaseInfo = getCurrentPhaseInfo();
 
-    // Try 1RM-based prescription
+    // Priority 1: user-entered known max (most reliable source)
+    const knownMax = await Store.getKnownMax(exercise.id);
+    if (knownMax > 0 && phaseInfo) {
+      const prescribed = roundToNearest(knownMax * phaseInfo.intensity);
+      return Math.max(prescribed, exercise.seedWeight);
+    }
+
+    // Priority 2: Epley 1RM estimated from best logged set
     const est1RM = await Store.getEstimated1RM(exercise.id);
     if (est1RM > 0 && phaseInfo) {
       const targetIntensity = phaseInfo.intensity;
       const prescribed = roundToNearest(est1RM * targetIntensity);
-      // Make sure it's not below seed weight
       return Math.max(prescribed, exercise.seedWeight);
     }
 

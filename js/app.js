@@ -4,6 +4,7 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentTab = 'today';
 let activeExerciseId = null;
+let activeExerciseTab = 'log'; // 'log' | 'history'
 let swapModalOpen = false;
 let deferredInstallPrompt = null;
 let selectedDow = new Date().getDay();
@@ -61,6 +62,12 @@ const ONBOARDING_STEPS = [
     title: 'YOUR STATS',
     isStats: true,
   },
+  {
+    key: 'maxes',
+    title: 'ENTER YOUR MAXES',
+    isMaxes: true,
+    subtitle: 'Optional — skip if unknown. Used to calculate exact % prescriptions.',
+  },
 ];
 
 let onboardingData = {};
@@ -82,7 +89,23 @@ function renderOnboardingStep() {
     `<span class="ob-dot${i === onboardingStep ? ' active' : ''}"></span>`).join('');
 
   let bodyHtml = '';
-  if (step.isStats) {
+  if (step.isMaxes) {
+    const keyLifts = PROGRAM.keyLifts.filter(l =>
+      ['back_squat','barbell_bench_press','romanian_deadlift','front_squat',
+       'power_clean','hang_power_snatch','push_press','weighted_pull_up','pendlay_row'].includes(l.id));
+    bodyHtml = `<div class="ob-stats-form">`;
+    bodyHtml += `<p class="ob-stats-note" style="margin-bottom:8px">${step.subtitle}</p>`;
+    for (const lift of keyLifts) {
+      const savedVal = (onboardingData.maxes || {})[lift.id] || '';
+      bodyHtml += `
+        <div class="ob-field">
+          <label class="ob-label">${lift.name.toUpperCase()} 1RM (lb)</label>
+          <input class="ob-input ob-max-input" type="number" inputmode="decimal"
+            data-lift-id="${lift.id}" placeholder="e.g. 225" min="0" max="2000" value="${savedVal}">
+        </div>`;
+    }
+    bodyHtml += `</div>`;
+  } else if (step.isStats) {
     bodyHtml = `
       <div class="ob-stats-form">
         <div class="ob-field">
@@ -164,18 +187,36 @@ function renderOnboardingStep() {
   document.getElementById('ob-next').addEventListener('click', async () => {
     const step = ONBOARDING_STEPS[onboardingStep];
 
-    if (step.isStats) {
-      // Collect stats (all optional)
-      onboardingData.age    = parseInt(document.getElementById('ob-age').value)    || null;
-      onboardingData.height = parseFloat(document.getElementById('ob-height').value) || null;
-      onboardingData.weight = parseFloat(document.getElementById('ob-weight').value) || null;
+    if (step.isMaxes) {
+      // Save entered maxes to IndexedDB, then finish
+      const maxInputs = overlay.querySelectorAll('.ob-max-input');
+      const maxes = {};
+      maxInputs.forEach(inp => {
+        const val = parseFloat(inp.value);
+        if (val > 0) maxes[inp.dataset.liftId] = val;
+      });
+      onboardingData.maxes = maxes;
       await Store.setSetting('user_profile', onboardingData);
+      // Persist each max individually so getPrescriptiveWeight picks them up
+      for (const [id, w] of Object.entries(maxes)) {
+        await Store.setKnownMax(id, w);
+      }
       document.getElementById('onboarding-overlay').remove();
       return;
     }
 
-    if (!onboardingData[step.key]) {
-      // Highlight that selection is needed
+    if (step.isStats) {
+      // Collect stats (all optional) — advance to maxes step without requiring selection
+      onboardingData.age    = parseInt(document.getElementById('ob-age').value)    || null;
+      onboardingData.height = parseFloat(document.getElementById('ob-height').value) || null;
+      onboardingData.weight = parseFloat(document.getElementById('ob-weight').value) || null;
+      onboardingStep++;
+      renderOnboardingStep();
+      return;
+    }
+
+    // For choice steps: require a selection before advancing
+    if (!step.isMaxes && !onboardingData[step.key]) {
       overlay.querySelector('.ob-body').style.animation = 'ob-shake 0.3s ease';
       setTimeout(() => overlay.querySelector('.ob-body').style.animation = '', 300);
       return;
@@ -211,6 +252,7 @@ function setupNav() {
 function switchTab(tab) {
   currentTab = tab;
   activeExerciseId = null;
+  activeExerciseTab = 'log';
   document.querySelectorAll('[data-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
@@ -535,17 +577,23 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
   if (!ex) return;
 
   const accent      = day.accent;
-  const sets        = await Session.getSetsForExercise(ex, Session.currentDate);
-  const topWeight   = sets.length ? sets[sets.length - 1].weight : await Session.getPrescriptiveWeight(ex);
   const swapName    = Session.getSwapName(ex.id);
   const displayName = swapName || ex.name;
   const [minR, maxR] = ex.repRange;
   const repStr      = minR === maxR ? `${minR}` : `${minR}–${maxR}`;
   const schemeLabel = SCHEME_LABELS[ex.scheme] || '';
   const phaseInfo   = Session.getCurrentPhaseInfo();
-
-  // Check rotation suggestion
   const suggestRotation = await Session.shouldSuggestRotation(ex.id);
+
+  // Load log data and history data in parallel
+  const [sets, historyHtml] = await Promise.all([
+    Session.getSetsForExercise(ex, Session.currentDate),
+    buildHistoryPanel(exerciseId, ex),
+  ]);
+  const topWeight = sets.length ? sets[sets.length - 1].weight : 0;
+
+  const isLog  = activeExerciseTab === 'log';
+  const isHist = activeExerciseTab === 'history';
 
   let html = `
     <div class="ex-detail" style="--accent:${accent}">
@@ -556,23 +604,28 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
       <div class="ex-detail-header">
         <h2 class="ex-detail-name">${displayName}${swapName ? ' <span class="swap-active-badge">SWAPPED</span>' : ''}</h2>
         <div class="ex-detail-meta">${ex.sets} sets · ${repStr} reps · ${ex.type}${schemeLabel ? ` · ${schemeLabel}` : ''}</div>
+      </div>
+      <div class="ex-tabs">
+        <button class="ex-tab-btn${isLog ? ' active' : ''}" data-extab="log">LOG</button>
+        <button class="ex-tab-btn${isHist ? ' active' : ''}" data-extab="history">HISTORY</button>
       </div>`;
 
-  // Rotation suggestion
-  if (suggestRotation && ex.rotation && ex.rotation.length > 0) {
-    const nextVariant = ex.rotation[0];
+  // Rotation suggestion (only on log tab)
+  if (isLog && suggestRotation && ex.rotation && ex.rotation.length > 0) {
     html += `
       <div class="rotation-banner">
         <span class="rotation-icon">🔄</span>
         <div class="rotation-text">
           <div class="rotation-title">4+ WEEKS ON THIS EXERCISE</div>
-          <div class="rotation-sub">Consider rotating to <strong>${nextVariant.replace(/_/g,' ')}</strong> for new stimulus</div>
+          <div class="rotation-sub">Consider rotating to <strong>${ex.rotation[0].replace(/_/g,' ')}</strong> for new stimulus</div>
         </div>
         <button class="rotation-dismiss" id="rotation-dismiss">✕</button>
       </div>`;
   }
 
-  // Working weight + scheme banner
+  // ── LOG panel ──
+  html += `<div class="ex-tab-panel${isLog ? '' : ' hidden'}" id="ex-panel-log">`;
+
   html += `
       <div class="rec-weight-banner">
         <div class="rec-left">
@@ -582,16 +635,15 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
         <span class="rec-value">${topWeight} lb</span>
       </div>`;
 
-  // Sets
   html += `<div class="sets-container">`;
   for (let i = 0; i < sets.length; i++) {
-    const set       = sets[i];
-    const tgt       = set.targetReps ?? maxR;  // per-set prescribed rep count
-    const rpeLabel  = set.reps != null ? Session.getRPELabel(set.reps, tgt) : '';
-    const rpeClass  = set.reps != null ? Session.getRPEClass(set.reps, tgt) : '';
-    const w         = set.weight != null ? set.weight : topWeight;
-    const r         = set.reps != null ? set.reps : '';
-    const effort    = set.effortValue != null ? set.effortValue : 2;
+    const set    = sets[i];
+    const tgt    = set.targetReps ?? maxR;
+    const rpeLabel = set.reps != null ? Session.getRPELabel(set.reps, tgt) : '';
+    const rpeClass = set.reps != null ? Session.getRPEClass(set.reps, tgt) : '';
+    const w      = set.weight != null ? set.weight : topWeight;
+    const r      = set.reps != null ? set.reps : '';
+    const effort = set.effortValue != null ? set.effortValue : 2;
 
     html += `
       <div class="set-row${set.done ? ' set-done' : ''}" data-set-index="${i}" data-target-reps="${tgt}">
@@ -621,22 +673,99 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
         ${i < sets.length - 1 ? `<span class="effort-next-hint" data-set-index="${i}"></span>` : ''}
       </div>`;
   }
-  html += `</div></div>`;
+  html += `</div>`; // sets-container
+  html += `</div>`; // ex-panel-log
+
+  // ── HISTORY panel ──
+  html += `<div class="ex-tab-panel${isHist ? '' : ' hidden'}" id="ex-panel-history">`;
+  html += historyHtml;
+  html += `</div></div>`; // ex-panel-history + ex-detail
 
   container.innerHTML = html;
   attachExerciseDetailEvents(exerciseId, ex, sets, maxR);
-
-  // Swap modal (hidden, outside detail)
   renderSwapModal(ex);
+}
+
+async function buildHistoryPanel(exerciseId, ex) {
+  const [allLogs, knownMax, rpeMaxInfo, simpleMax] = await Promise.all([
+    Store.getAllLogsForExercise(exerciseId),
+    Store.getKnownMax(exerciseId),
+    Store.getBestRPEAdjusted1RM(exerciseId),
+    Store.getEstimated1RM(exerciseId),
+  ]);
+
+  const perceivedMax = rpeMaxInfo ? rpeMaxInfo.adj1RM : simpleMax;
+  let html = `<div class="ex-max-card">`;
+  html += `<div class="ex-max-title">STRENGTH ESTIMATES</div>`;
+
+  if (knownMax > 0) {
+    html += `<div class="ex-max-row"><span class="ex-max-label">ENTERED MAX</span><span class="ex-max-val">${knownMax} lb</span></div>`;
+    if (perceivedMax > 0) {
+      const pct = Math.round((perceivedMax / knownMax) * 100);
+      const [cls, msg] = pct >= 95 ? ['mstatus-fire', '🔥 You\'re at your max — PR incoming']
+        : pct >= 88 ? ['mstatus-good', '✓ Working at high intensity']
+        : pct >= 78 ? ['mstatus-warn', '↑ Room to push harder']
+        : ['mstatus-low', '⚠ Training well below your known max'];
+      html += `<div class="ex-max-row"><span class="ex-max-label">PERCEIVED MAX</span><span class="ex-max-val">${perceivedMax} lb <span class="ex-max-pct">${pct}%</span></span></div>`;
+      html += `<div class="ex-max-status ${cls}">${msg}</div>`;
+    }
+  } else if (perceivedMax > 0) {
+    html += `<div class="ex-max-row"><span class="ex-max-label">PERCEIVED MAX</span><span class="ex-max-val">${perceivedMax} lb</span></div>`;
+    html += `<div class="ex-max-status mstatus-info">Add a known max in Progress → Maxes to see intensity %</div>`;
+  } else {
+    html += `<div class="ex-max-empty">Log sets with effort ratings to see estimates</div>`;
+  }
+
+  if (rpeMaxInfo) {
+    const effortLabels = ['Very Easy','Easy','Average','Hard','Max','Fail'];
+    html += `<div class="ex-max-detail">Best: ${rpeMaxInfo.weight} lb × ${rpeMaxInfo.reps} @ ${effortLabels[rpeMaxInfo.effortValue] || '?'} (+${rpeMaxInfo.rir} RIR = ~${rpeMaxInfo.effectiveReps} eff. reps)</div>`;
+  }
+  html += `</div>`;
+
+  const done = allLogs.filter(s => s.sets && s.sets.some(set => set.done));
+  if (!done.length) {
+    html += `<div class="ex-hist-empty">No logged sessions yet.</div>`;
+    return html;
+  }
+
+  html += `<div class="ex-hist-list">`;
+  for (const session of done.slice(0, 10)) {
+    const doneSets = session.sets.filter(s => s.done && s.weight && s.reps);
+    if (!doneSets.length) continue;
+    const bestEst = Math.max(...doneSets.map(s => epley1RM(s.weight, s.reps)));
+    const setsStr = doneSets.map(s => `${s.weight}×${s.reps}`).join('  ');
+    html += `
+      <div class="ex-hist-entry">
+        <div class="ex-hist-hdr">
+          <span class="ex-hist-date">${formatDate(session.date)}</span>
+          <span class="ex-hist-1rm">~${bestEst} lb 1RM</span>
+        </div>
+        <div class="ex-hist-sets">${setsStr}</div>
+      </div>`;
+  }
+  html += `</div>`;
+  return html;
 }
 
 function attachExerciseDetailEvents(exerciseId, ex, sets, maxR) {
   const container = document.getElementById('exercise-detail-container');
   if (!container) return;
 
+  // Tab switching (LOG / HISTORY)
+  container.querySelectorAll('.ex-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeExerciseTab = btn.dataset.extab;
+      container.querySelectorAll('.ex-tab-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.extab === activeExerciseTab));
+      container.querySelectorAll('.ex-tab-panel').forEach(p =>
+        p.classList.toggle('hidden', p.id !== `ex-panel-${activeExerciseTab}`));
+    });
+  });
+
   // Back
   document.getElementById('back-to-list').addEventListener('click', () => {
     activeExerciseId = null;
+    activeExerciseTab = 'log';
     renderApp();
   });
 
@@ -926,6 +1055,7 @@ function attachExerciseCardEvents() {
   document.querySelectorAll('.exercise-card').forEach(card => {
     card.addEventListener('click', () => {
       activeExerciseId = card.dataset.exerciseId;
+      activeExerciseTab = 'log';
       renderApp();
     });
   });
@@ -1034,18 +1164,42 @@ async function renderProgress(container) {
       </div>`;
   }
 
-  // PRs
-  html += `<div class="section-label">PERSONAL RECORDS (Est. 1RM)</div>`;
-  html += `<div class="pr-grid">`;
+  // Strength dashboard — known maxes + perceived maxes per key lift
+  html += `<div class="section-label">KNOWN MAXES <span class="section-sub">tap to edit</span></div>`;
+  const knownMaxes = await Store.getAllKnownMaxes();
+  html += `<div class="maxes-list">`;
   for (const lift of PROGRAM.keyLifts) {
-    const best   = await Store.getBestLoggedSet(lift.id);
-    const weight = best ? best.weight : 0;
-    const est1rm = best ? best.est1rm : 0;
-    html += `<div class="pr-card">
-      <div class="pr-name">${lift.name}</div>
-      <div class="pr-val">${weight > 0 ? weight + ' lb' : '—'}</div>
-      ${est1rm > 0 ? `<div class="pr-est1rm">~${est1rm} lb 1RM</div>` : ''}
-    </div>`;
+    const knownMax  = knownMaxes[lift.id] || 0;
+    const rpeInfo   = await Store.getBestRPEAdjusted1RM(lift.id);
+    const simpleEst = await Store.getEstimated1RM(lift.id);
+    const perceived = rpeInfo ? rpeInfo.adj1RM : simpleEst;
+
+    let comparison = '';
+    if (knownMax > 0 && perceived > 0) {
+      const pct = Math.round((perceived / knownMax) * 100);
+      const [cls, label] = pct >= 95 ? ['mstatus-fire', `${pct}% — at max`]
+        : pct >= 88 ? ['mstatus-good', `${pct}% — high intensity`]
+        : pct >= 78 ? ['mstatus-warn', `${pct}% — push harder`]
+        : ['mstatus-low', `${pct}% — below potential`];
+      comparison = `<span class="max-pct-badge ${cls}">${label}</span>`;
+    }
+
+    html += `
+      <div class="max-row" data-lift-id="${lift.id}">
+        <div class="max-row-left">
+          <span class="max-lift-name">${lift.name}</span>
+          ${comparison}
+        </div>
+        <div class="max-row-right">
+          <div class="max-known-wrap">
+            <input class="max-input" type="number" inputmode="decimal"
+              data-lift-id="${lift.id}" value="${knownMax || ''}" placeholder="— lb"
+              min="0" max="2000" step="2.5">
+            <span class="max-input-unit">lb</span>
+          </div>
+          ${perceived > 0 ? `<div class="max-perceived">Perceived ~${perceived} lb</div>` : ''}
+        </div>
+      </div>`;
   }
   html += `</div>`;
 
@@ -1082,6 +1236,15 @@ async function renderProgress(container) {
   }
 
   container.innerHTML = html;
+
+  // Wire up max input changes
+  container.querySelectorAll('.max-input').forEach(input => {
+    input.addEventListener('change', async (e) => {
+      const liftId = e.target.dataset.liftId;
+      const val    = parseFloat(e.target.value) || 0;
+      await Store.setKnownMax(liftId, val);
+    });
+  });
 }
 
 function renderBWChart(entries) {
