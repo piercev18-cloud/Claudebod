@@ -968,7 +968,12 @@ function renderSwapModal(ex) {
           <button class="swap-revert-btn" id="swap-revert-btn">Revert to original</button>
         </div>` : ''}
       <div class="swap-list">
-        <div class="swap-section-label">SAME PATTERN — DIRECT SUBSTITUTIONS</div>
+        <div class="swap-section-label">CUSTOM EXERCISE</div>
+        <div class="swap-custom-row">
+          <input type="text" id="swap-custom-input" class="swap-custom-input" placeholder="e.g. Safety Bar Step Up" autocomplete="off" spellcheck="false">
+          <button class="swap-custom-btn" id="swap-custom-confirm">USE</button>
+        </div>
+        ${alts.length ? `<div class="swap-section-label">SAME PATTERN — DIRECT SUBSTITUTIONS</div>` : ''}
         ${alts.map((alt, i) => `
           <button class="swap-option" data-alt-name="${alt.name}" data-exercise="${ex.id}">
             <div class="swap-opt-name">${alt.name}</div>
@@ -980,6 +985,18 @@ function renderSwapModal(ex) {
   document.getElementById('app').appendChild(modal);
 
   document.getElementById('close-swap-modal').addEventListener('click', () => hideSwapModal());
+
+  const customInput  = document.getElementById('swap-custom-input');
+  const customConfirm = document.getElementById('swap-custom-confirm');
+  async function applyCustomSwap() {
+    const name = customInput.value.trim();
+    if (!name) { customInput.focus(); return; }
+    await Session.applySwap(ex.id, name);
+    hideSwapModal();
+    renderApp();
+  }
+  customConfirm.addEventListener('click', applyCustomSwap);
+  customInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCustomSwap(); });
 
   document.getElementById('swap-revert-btn')?.addEventListener('click', async () => {
     await Session.clearSwap(ex.id);

@@ -402,6 +402,11 @@ details[open] .accordion-chevron{transform:rotate(90deg)}
 .swap-option:active{background:var(--surface3);border-color:var(--neon-purple)}
 .swap-opt-name{font-family:var(--font-h);font-size:15px;font-weight:700;color:var(--text)}
 .swap-opt-note{font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.3}
+.swap-custom-row{display:flex;gap:8px;align-items:center}
+.swap-custom-input{flex:1;background:var(--surface2);border:2px solid var(--border2);color:var(--text);font-size:14px;padding:8px 10px;outline:none;min-width:0}
+.swap-custom-input:focus{border-color:var(--neon-purple)}
+.swap-custom-btn{background:var(--neon-purple);border:none;color:#000;font-family:var(--font-pixel);font-size:7px;padding:8px 14px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.swap-custom-btn:active{opacity:.75}
 
 /* ── Progress Tab ──────────────────────────────────────────────── */
 .tab-header{padding:14px 12px 10px;border-bottom:2px solid var(--border);background:var(--surface)}
