@@ -604,6 +604,7 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
       <div class="ex-detail-header">
         <h2 class="ex-detail-name">${displayName}${swapName ? ' <span class="swap-active-badge">SWAPPED</span>' : ''}</h2>
         <div class="ex-detail-meta">${ex.sets} sets · ${repStr} reps · ${ex.type}${schemeLabel ? ` · ${schemeLabel}` : ''}</div>
+        ${Session.getPrescriptionReason(ex.id) ? `<div class="ex-coach-reason">${Session.getPrescriptionReason(ex.id)}</div>` : ''}
       </div>
       <div class="ex-tabs">
         <button class="ex-tab-btn${isLog ? ' active' : ''}" data-extab="log">LOG</button>

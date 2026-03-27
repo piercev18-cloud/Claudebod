@@ -113,7 +113,7 @@ const PROGRAM = {
             { name: 'Machine Row',            notes: 'Great for fatigue/deload phases' },
             { name: 'Seal Row',               notes: 'Strict, eliminates momentum entirely' },
           ]},
-        { id: 'overhead_press_db',    name: 'Overhead Press DB',         sets: 3, repRange: [12,15], seedWeight: 50,  type: 'compound', scheme: 'straight', pattern: 'v_push',
+        { id: 'overhead_press_db',    name: 'Overhead Press DB',         sets: 3, repRange: [12,15], seedWeight: 50,  type: 'compound', scheme: 'ramped', pattern: 'v_push',
           rotation: ['seated_bb_ohp','arnold_press','landmine_ohp','cable_ohp'],
           alternatives: [
             { name: 'Seated Barbell OHP',     notes: 'Higher load potential, bilateral' },
@@ -121,7 +121,7 @@ const PROGRAM = {
             { name: 'Landmine OHP',           notes: 'Shoulder-friendly, unilateral variation' },
             { name: 'Cable Single-Arm OHP',   notes: 'Anti-lateral flexion demand added' },
           ]},
-        { id: 'lat_pulldown',         name: 'Lat Pulldown',              sets: 3, repRange: [12,15], seedWeight: 130, type: 'compound', scheme: 'straight', pattern: 'v_pull',
+        { id: 'lat_pulldown',         name: 'Lat Pulldown',              sets: 3, repRange: [12,15], seedWeight: 130, type: 'compound', scheme: 'ramped', pattern: 'v_pull',
           rotation: ['neutral_pulldown','single_arm_pulldown','straight_arm_pulldown','pull_up'],
           alternatives: [
             { name: 'Neutral Grip Pulldown',  notes: 'Elbows path shifts, slightly more bicep' },
@@ -366,7 +366,7 @@ const PROGRAM = {
             { name: 'Paused Pull (knee)',     notes: 'Pause at knee, hold position 2 sec' },
             { name: 'Segment Deadlift',       notes: 'Multiple pause points, extreme position work' },
           ]},
-        { id: 'back_squat_sat',            name: 'Back Squat',                  sets: 3, repRange: [5,5], seedWeight: 195, type: 'compound', scheme: 'straight', pattern: 'squat',
+        { id: 'back_squat_sat',            name: 'Back Squat',                  sets: 3, repRange: [5,5], seedWeight: 195, type: 'compound', scheme: 'ramped', pattern: 'squat',
           rotation: ['front_squat_light','overhead_squat','pause_squat','tempo_squat'],
           alternatives: [
             { name: 'Front Squat',            notes: 'Oly-specific carryover, upright torso' },
