@@ -299,6 +299,19 @@ details[open] .accordion-chevron{transform:rotate(90deg)}
 .ex-progress.done{color:var(--neon-green);text-shadow:0 0 6px var(--neon-green)}
 .ex-chevron{font-size:20px;color:var(--text-dim);font-family:monospace}
 .swap-badge{font-family:var(--font-pixel);font-size:5px;background:rgba(255,41,117,.2);color:var(--neon-pink);padding:1px 4px;vertical-align:middle;margin-left:4px}
+.variant-badge{font-family:var(--font-pixel);font-size:5px;background:rgba(165,90,245,.2);color:var(--neon-purple);padding:1px 4px;vertical-align:middle;margin-left:4px}
+
+/* ── Variant Picker ────────────────────────────────────────────── */
+.variant-picker{padding:32px 16px 16px;display:flex;flex-direction:column;align-items:center;gap:16px}
+.variant-prompt{font-family:var(--font-pixel);font-size:10px;color:var(--text-muted);letter-spacing:.1em;text-align:center}
+.variant-choices{display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px}
+.variant-choice-btn{background:var(--surface2);border:2px solid var(--border2);padding:20px 16px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;width:100%}
+.variant-choice-btn:active{border-color:var(--neon-purple);background:rgba(165,90,245,.08)}
+.variant-choice-name{font-family:var(--font-h);font-size:22px;font-weight:700;color:var(--text)}
+/* Header row for name + change button */
+.ex-detail-name-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.variant-change-btn{background:none;border:2px solid var(--neon-purple);color:var(--neon-purple);font-family:var(--font-pixel);font-size:5px;padding:3px 8px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.variant-change-btn:active{opacity:.7}
 
 /* ── Exercise Detail ───────────────────────────────────────────── */
 .ex-detail{padding-bottom:20px}

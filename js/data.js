@@ -344,6 +344,10 @@ const PROGRAM = {
       name: 'Saturday', label: 'Full Olympic', accent: '#A55AF5', type: 'training',
       exercises: [
         { id: 'snatch_or_cj',             name: 'Snatch OR Clean & Jerk',     sets: 4, warmups: 3, repRange: [2,3], seedWeight: 145, type: 'oly', scheme: 'oly_build', pattern: 'snatch',
+          variants: [
+            { id: 'snatch',      name: 'Snatch',         seedWeight: 145 },
+            { id: 'clean_jerk',  name: 'Clean & Jerk',   seedWeight: 185 },
+          ],
           rotation: ['full_snatch','full_clean_and_jerk','clean_and_press','snatch_complex'],
           alternatives: [
             { name: 'Full Snatch',            notes: 'Technical, overhead squat receive' },
@@ -360,6 +364,10 @@ const PROGRAM = {
             { name: 'Jerk Dip & Drive',       notes: 'Technique drill, no press, just dip+drive' },
           ]},
         { id: 'clean_pull_snatch_pull',    name: 'Clean Pull / Snatch Pull',    sets: 3, warmups: 2, repRange: [4,4], seedWeight: 195, type: 'oly', scheme: 'oly_build', pattern: 'oly_pull',
+          variants: [
+            { id: 'clean_pull',   name: 'Clean Pull',   seedWeight: 195 },
+            { id: 'snatch_pull',  name: 'Snatch Pull',  seedWeight: 165 },
+          ],
           rotation: ['snatch_deadlift','clean_deadlift','paused_pull','segment_pull'],
           alternatives: [
             { name: 'Snatch Deadlift',        notes: 'Slow pull to reinforce positions' },

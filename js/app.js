@@ -553,7 +553,13 @@ function renderExerciseCard(ex, accent) {
   const scheme  = SCHEME_LABELS[ex.scheme] || '';
   const metaScheme = scheme ? `<span class="scheme-tag">${scheme}</span>` : '';
   const swapName = Session.getSwapName(ex.id);
-  const displayName = swapName ? `${swapName} <span class="swap-badge">SWAP</span>` : ex.name;
+  const chosenVariant = ex.variants ? Session.getVariant(ex.id) : null;
+  const chosenVariantObj = chosenVariant && ex.variants ? ex.variants.find(v => v.id === chosenVariant) : null;
+  const displayName = swapName
+    ? `${swapName} <span class="swap-badge">SWAP</span>`
+    : chosenVariantObj
+      ? `${chosenVariantObj.name} <span class="variant-badge">CHOSEN</span>`
+      : ex.name;
 
   return `
     <div class="exercise-card${allDone ? ' all-done' : ''}" data-exercise-id="${ex.id}" style="--accent:${accent}">
@@ -568,6 +574,38 @@ function renderExerciseCard(ex, accent) {
     </div>`;
 }
 
+// ── Variant Picker ─────────────────────────────────────────────────────────────
+function renderVariantPicker(ex, day, container) {
+  container.innerHTML = `
+    <div class="ex-detail" style="--accent:${day.accent}">
+      <div class="ex-detail-topbar">
+        <button class="back-btn" id="back-to-list">‹ BACK</button>
+      </div>
+      <div class="variant-picker">
+        <div class="variant-prompt">WHICH MOVEMENT TODAY?</div>
+        <div class="variant-choices">
+          ${ex.variants.map(v => `
+            <button class="variant-choice-btn" data-variant="${v.id}" data-exercise="${ex.id}">
+              <div class="variant-choice-name">${v.name}</div>
+            </button>`).join('')}
+        </div>
+      </div>
+    </div>`;
+
+  container.querySelector('#back-to-list').addEventListener('click', () => {
+    activeExerciseId = null;
+    activeExerciseTab = 'log';
+    renderApp();
+  });
+
+  container.querySelectorAll('.variant-choice-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      Session.setVariant(btn.dataset.exercise, btn.dataset.variant);
+      loadAndRenderExerciseDetail(btn.dataset.exercise, day);
+    });
+  });
+}
+
 // ── Exercise Detail ────────────────────────────────────────────────────────────
 async function loadAndRenderExerciseDetail(exerciseId, day) {
   const container = document.getElementById('exercise-detail-container');
@@ -578,19 +616,31 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
 
   const accent      = day.accent;
   const swapName    = Session.getSwapName(ex.id);
-  const displayName = swapName || ex.name;
+  const chosenVariant    = ex.variants ? Session.getVariant(ex.id) : null;
+  const chosenVariantObj = chosenVariant && ex.variants ? ex.variants.find(v => v.id === chosenVariant) : null;
   const [minR, maxR] = ex.repRange;
   const repStr      = minR === maxR ? `${minR}` : `${minR}–${maxR}`;
   const schemeLabel = SCHEME_LABELS[ex.scheme] || '';
   const phaseInfo   = Session.getCurrentPhaseInfo();
   const suggestRotation = await Session.shouldSuggestRotation(ex.id);
 
+  // Variant exercise with no movement chosen yet — show the picker
+  if (ex.variants && !chosenVariant) {
+    renderVariantPicker(ex, day, container);
+    return;
+  }
+
+  const effectiveId = Session.getEffectiveId(ex.id);
+  const displayName = swapName
+    ? `${swapName} <span class="swap-active-badge">SWAPPED</span>`
+    : chosenVariantObj ? chosenVariantObj.name : ex.name;
+
   // Load log data and history data in parallel
   const [sets, historyHtml] = await Promise.all([
     Session.getSetsForExercise(ex, Session.currentDate),
-    buildHistoryPanel(exerciseId, ex),
+    buildHistoryPanel(effectiveId, ex),
   ]);
-  const topWeight = sets.length ? sets[sets.length - 1].weight : 0;
+  const topWeight = sets && sets.length ? sets[sets.length - 1].weight : 0;
 
   const isLog  = activeExerciseTab === 'log';
   const isHist = activeExerciseTab === 'history';
@@ -602,7 +652,10 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
         <button class="swap-btn" id="open-swap-btn" data-exercise="${exerciseId}">⇄ SWAP</button>
       </div>
       <div class="ex-detail-header">
-        <h2 class="ex-detail-name">${displayName}${swapName ? ' <span class="swap-active-badge">SWAPPED</span>' : ''}</h2>
+        <div class="ex-detail-name-row">
+          <h2 class="ex-detail-name">${displayName}</h2>
+          ${chosenVariantObj ? `<button class="variant-change-btn" id="change-variant-btn" data-exercise="${ex.id}">⇄ CHANGE</button>` : ''}
+        </div>
         <div class="ex-detail-meta">${ex.sets} working sets${ex.warmups ? ` + ${ex.warmups} warm-up` : ''} · ${repStr} reps · ${ex.type}${schemeLabel ? ` · ${schemeLabel}` : ''}</div>
         ${Session.getPrescriptionReason(ex.id) ? `<div class="ex-coach-reason">${Session.getPrescriptionReason(ex.id)}</div>` : ''}
       </div>
@@ -666,7 +719,7 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
           ${!isWarmup ? `<span class="rpe-badge ${rpeClass}" data-index="${i}">${rpeLabel}</span>` : ''}
         </div>
         <button class="set-done-btn${set.done ? ' completed' : ''}"
-          data-index="${i}" data-exercise="${exerciseId}" data-type="${ex.type}">✓</button>
+          data-index="${i}" data-exercise="${effectiveId}" data-type="${ex.type}">✓</button>
       </div>
       ${!isWarmup ? `
       <div class="effort-row${set.done ? '' : ' hidden'}" data-set-index="${i}">
@@ -801,11 +854,20 @@ function attachExerciseDetailEvents(exerciseId, ex, sets, maxR) {
     });
   }
 
+  // Change-variant button (variant exercises only)
+  const changeVariantBtn = document.getElementById('change-variant-btn');
+  if (changeVariantBtn) {
+    changeVariantBtn.addEventListener('click', () => {
+      Session.clearVariant(exerciseId);
+      loadAndRenderExerciseDetail(exerciseId, day);
+    });
+  }
+
   // Weight inputs
   container.querySelectorAll('.set-weight').forEach(input => {
     input.addEventListener('change', async (e) => {
       const idx = parseInt(e.target.dataset.index);
-      await Session.updateSet(exerciseId, idx, 'weight', parseFloat(e.target.value) || 0);
+      await Session.updateSet(effectiveId, idx, 'weight', parseFloat(e.target.value) || 0);
     });
   });
 
@@ -814,7 +876,7 @@ function attachExerciseDetailEvents(exerciseId, ex, sets, maxR) {
     input.addEventListener('input', async (e) => {
       const idx  = parseInt(e.target.dataset.index);
       const reps = parseInt(e.target.value);
-      await Session.updateSet(exerciseId, idx, 'reps', isNaN(reps) ? null : reps);
+      await Session.updateSet(effectiveId, idx, 'reps', isNaN(reps) ? null : reps);
       const badge   = container.querySelector(`.rpe-badge[data-index="${idx}"]`);
       const setRow  = container.querySelector(`.set-row[data-set-index="${idx}"]`);
       const tgt     = parseInt(setRow?.dataset.targetReps) || maxR;
@@ -835,7 +897,7 @@ function attachExerciseDetailEvents(exerciseId, ex, sets, maxR) {
       const isDone = sets[idx].done;
 
       if (isDone) {
-        await Session.uncompleteSet(exerciseId, idx);
+        await Session.uncompleteSet(effectiveId, idx);
         sets[idx].done = false;
         setRow.classList.remove('set-done');
         btn.classList.remove('completed');
@@ -849,10 +911,10 @@ function attachExerciseDetailEvents(exerciseId, ex, sets, maxR) {
         const reps    = parseInt(repsInput.value)    || 0;
         const effort  = sets[idx].effortValue != null ? sets[idx].effortValue : 2;
 
-        await Session.updateSet(exerciseId, idx, 'weight', weight);
-        await Session.updateSet(exerciseId, idx, 'reps', reps);
-        await Session.updateSet(exerciseId, idx, 'effortValue', effort);
-        await Session.completeSet(exerciseId, idx);
+        await Session.updateSet(effectiveId, idx, 'weight', weight);
+        await Session.updateSet(effectiveId, idx, 'reps', reps);
+        await Session.updateSet(effectiveId, idx, 'effortValue', effort);
+        await Session.completeSet(effectiveId, idx);
         sets[idx].done = true; sets[idx].weight = weight; sets[idx].reps = reps;
 
         setRow.classList.add('set-done');
@@ -862,14 +924,14 @@ function attachExerciseDetailEvents(exerciseId, ex, sets, maxR) {
         if (effortRow) effortRow.classList.remove('hidden');
 
         // Show next-set weight hint
-        updateNextSetHint(container, idx, sets, effort, ex.type, exerciseId);
+        updateNextSetHint(container, idx, sets, effort, ex.type, effectiveId);
 
         // ── XP Award ──
         const xpGained = await XPEngine.awardSetXP(weight, reps, exType, effort);
         showXPPopup(xpGained, btn);
         renderXPBar();
         // Check for exercise PR
-        await XPEngine.recordPR(exerciseId, weight);
+        await XPEngine.recordPR(effectiveId, weight);
         // Check if all sets done (exercise complete bonus)
         const allDone = sets.every(s => s.done);
         if (allDone) {
@@ -886,7 +948,8 @@ function attachExerciseDetailEvents(exerciseId, ex, sets, maxR) {
             // Calculate session volume
             let vol = 0;
             for (const e of dayExs) {
-              const sd = Session.sessionData[e.id];
+              const eid = Session.getEffectiveId(e.id);
+              const sd = Session.sessionData[eid] || Session.sessionData[e.id];
               if (sd) for (const s of sd.sets) if (s.done) vol += (s.weight||0)*(s.reps||0);
             }
             await XPEngine.recordSessionVolume(vol);

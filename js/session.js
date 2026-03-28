@@ -4,10 +4,35 @@
 const Session = (() => {
   let currentDate   = getTodayString();
   let currentDow    = new Date().getDay();  // which program-day is loaded (can differ from calendar)
-  let sessionData   = {};  // { [exId]: { sets: [{weight, reps, done, effortValue}] } }
+  let sessionData   = {};  // { [effectiveId]: { sets: [{weight, reps, done, effortValue}] } }
   let mesoState     = null;
-  let swapOverrides = {}; // { [exId]: swappedToName }
-  let prescriptionReasons = {}; // { [exId]: string }
+  let swapOverrides    = {}; // { [baseId]: swappedToName }
+  let variantSelections = {}; // { [baseId]: variantId } — which movement was chosen today
+  let prescriptionReasons = {}; // { [effectiveId]: string }
+
+  // Returns the storage key for an exercise: 'exId__variantId' if a variant is chosen, else 'exId'.
+  function getEffectiveId(baseId) {
+    const v = variantSelections[baseId];
+    return v ? `${baseId}__${v}` : baseId;
+  }
+
+  // Strips __variantId suffix to get the program exercise id for lookup.
+  function getBaseId(id) {
+    const i = id.indexOf('__');
+    return i !== -1 ? id.slice(0, i) : id;
+  }
+
+  function setVariant(baseId, variantId) {
+    variantSelections[baseId] = variantId;
+  }
+
+  function getVariant(baseId) {
+    return variantSelections[baseId] || null;
+  }
+
+  function clearVariant(baseId) {
+    delete variantSelections[baseId];
+  }
 
   function getTodayString() {
     return new Date().toISOString().split('T')[0];
@@ -181,14 +206,28 @@ const Session = (() => {
     currentDate = date;
     sessionData = {};
     swapOverrides = {};
+    variantSelections = {};
     await loadMesoState();
 
     currentDow = dowOverride != null ? dowOverride : new Date(date + 'T12:00:00').getDay();
     const exercises = getExercisesForDay(currentDow);
 
     for (const ex of exercises) {
-      const log = await Store.getSetLog(ex.id, date);
-      if (log && log.sets) sessionData[ex.id] = { sets: log.sets };
+      if (ex.variants) {
+        // Find whichever variant was logged today (if any)
+        for (const v of ex.variants) {
+          const effectiveId = `${ex.id}__${v.id}`;
+          const log = await Store.getSetLog(effectiveId, date);
+          if (log && log.sets) {
+            sessionData[effectiveId] = { sets: log.sets };
+            variantSelections[ex.id] = v.id;
+            break;
+          }
+        }
+      } else {
+        const log = await Store.getSetLog(ex.id, date);
+        if (log && log.sets) sessionData[ex.id] = { sets: log.sets };
+      }
 
       const swap = await Store.getActiveSwap(ex.id);
       if (swap && swap.date === date) swapOverrides[ex.id] = swap.swappedToName;
@@ -204,14 +243,25 @@ const Session = (() => {
   }
 
   async function getSetsForExercise(exercise, date) {
-    if (sessionData[exercise.id]) return sessionData[exercise.id].sets;
+    // Variant exercise with no selection yet — caller must show picker first
+    if (exercise.variants && !variantSelections[exercise.id]) return null;
 
-    const topWeight = await getPrescriptiveWeight(exercise);
+    const effectiveId = getEffectiveId(exercise.id);
+    if (sessionData[effectiveId]) return sessionData[effectiveId].sets;
+
+    // Build an exercise object with the variant's seedWeight for weight history lookup
+    let lookupEx = exercise;
+    if (exercise.variants) {
+      const v = exercise.variants.find(v => v.id === variantSelections[exercise.id]);
+      lookupEx = { ...exercise, id: effectiveId, seedWeight: v ? v.seedWeight : exercise.seedWeight };
+    }
+
+    const topWeight = await getPrescriptiveWeight(lookupEx);
     const schemed   = buildSetsFromScheme(exercise, topWeight);
-    const sets = schemed.map(({ weight, targetReps }) => ({
-      weight, reps: null, targetReps, done: false, effortValue: 2,
+    const sets = schemed.map(({ weight, targetReps, isWarmup }) => ({
+      weight, reps: null, targetReps, done: false, effortValue: 2, isWarmup: !!isWarmup,
     }));
-    sessionData[exercise.id] = { sets };
+    sessionData[effectiveId] = { sets };
     return sets;
   }
 
@@ -239,7 +289,7 @@ const Session = (() => {
     }
 
     // Adjust next incomplete set's weight using reps + effort (always runs)
-    const ex = getExerciseById(exerciseId);
+    const ex = getExerciseById(getBaseId(exerciseId));
     if (ex) {
       const sets = sessionData[exerciseId].sets;
       const nextIdx = sets.findIndex((s, i) => i > setIndex && !s.done);
@@ -278,9 +328,11 @@ const Session = (() => {
   // ── Progress Queries ──────────────────────────────────────────────────────
 
   function getCompletionCount(exerciseId) {
-    const data = sessionData[exerciseId];
+    const effectiveId = getEffectiveId(exerciseId);
+    const data = sessionData[effectiveId] || sessionData[exerciseId];
     if (!data) return { done: 0, total: 0 };
-    return { done: data.sets.filter(s => s.done).length, total: data.sets.length };
+    const working = data.sets.filter(s => !s.isWarmup);
+    return { done: working.filter(s => s.done).length, total: working.length };
   }
 
   // ── Rotation Warning ─────────────────────────────────────────────────────
@@ -291,7 +343,8 @@ const Session = (() => {
   }
 
   function getPrescriptionReason(exerciseId) {
-    return prescriptionReasons[exerciseId] || null;
+    const effectiveId = getEffectiveId(exerciseId);
+    return prescriptionReasons[effectiveId] || prescriptionReasons[exerciseId] || null;
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -308,6 +361,11 @@ const Session = (() => {
     getRPEClass,
     getSetsForExercise,
     getPrescriptionReason,
+    setVariant,
+    getVariant,
+    clearVariant,
+    getEffectiveId,
+    getBaseId,
     updateSet,
     completeSet,
     uncompleteSet,
