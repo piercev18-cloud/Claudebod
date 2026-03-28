@@ -67,16 +67,17 @@ const SET_SCHEMES = {
       };
     }),
 
-  // Olympic technical build — same reps, weight climbs 70→100%
-  // e.g., Snatch Pull [4,4] × 4: 70%×4, 80%×4, 90%×4, 100%×4
-  oly_build: (w, n, [, max]) =>
-    Array(n).fill(null).map((_, i) => {
-      const frac = i / (n - 1);
-      return {
-        weight:     roundToNearest(w * (0.70 + frac * 0.30)),
-        targetReps: max,
-      };
-    }),
+  // Olympic technical build — explicit warm-up sets then full working sets.
+  // warmupCount warm-ups ramp from 55%→85%; n working sets all at 100%.
+  // e.g., Snatch/C&J warmups=3 sets=4 [2,3]: W1=55%×3, W2=70%×3, W3=85%×3, S1-S4=100%×3
+  // e.g., Snatch Pull warmups=2 sets=3 [4,4]: W1=65%×4, W2=82%×4, S1-S3=100%×4
+  oly_build: (w, n, [, max], warmupCount = 0) => {
+    const WARMUP_FRACS = { 1: [0.75], 2: [0.65, 0.82], 3: [0.55, 0.70, 0.85] };
+    const fracs = WARMUP_FRACS[warmupCount] || [];
+    const warmups  = fracs.map(f => ({ weight: roundToNearest(w * f), targetReps: max, isWarmup: true }));
+    const working  = Array(n).fill(null).map(() => ({ weight: w, targetReps: max, isWarmup: false }));
+    return [...warmups, ...working];
+  },
 
   // Hypertrophy descending — opener lighter / more reps, final set heaviest / fewest reps
   // e.g., Incline DB Press [10,12] × 4: 88%×12, 92%×11, 96%×11, 100%×10
@@ -182,7 +183,7 @@ const PROGRAM = {
             { name: 'V-Squat Machine',        notes: 'Similar to leg press, torso angle varies' },
             { name: 'Spanish Squat',          notes: 'Banded, knee dominant, quad isolation' },
           ]},
-        { id: 'snatch_pull',        name: 'Snatch Pull',          sets: 4, repRange: [4,4],   seedWeight: 155, type: 'oly', scheme: 'oly_build', pattern: 'oly_pull',
+        { id: 'snatch_pull',        name: 'Snatch Pull',          sets: 3, warmups: 2, repRange: [4,4],   seedWeight: 155, type: 'oly', scheme: 'oly_build', pattern: 'oly_pull',
           rotation: ['clean_pull','snatch_deadlift','paused_snatch_pull','halting_snatch_dl'],
           alternatives: [
             { name: 'Clean Pull',             notes: 'Narrower grip pull, different timing' },
@@ -190,7 +191,7 @@ const PROGRAM = {
             { name: 'Paused Snatch Pull',     notes: 'Pause at knee, reinforce position' },
             { name: 'Halting Snatch DL',      notes: 'Pause above knee, extreme position work' },
           ]},
-        { id: 'hang_power_snatch',  name: 'Hang Power Snatch',    sets: 4, repRange: [3,3],   seedWeight: 115, type: 'oly', scheme: 'oly_build', pattern: 'snatch',
+        { id: 'hang_power_snatch',  name: 'Hang Power Snatch',    sets: 3, warmups: 2, repRange: [3,3],   seedWeight: 115, type: 'oly', scheme: 'oly_build', pattern: 'snatch',
           rotation: ['power_snatch','snatch_from_blocks','muscle_snatch','high_pull_snatch'],
           alternatives: [
             { name: 'Power Snatch (floor)',   notes: 'Full range, builds from floor pull' },
@@ -289,7 +290,7 @@ const PROGRAM = {
             { name: 'Zercher Squat',          notes: 'Crook-of-elbow, high core demand' },
             { name: 'Goblet Squat (heavy)',   notes: 'Accessible, great upright torso drill' },
           ]},
-        { id: 'power_clean',          name: 'Power Clean',          sets: 5, repRange: [3,3],   seedWeight: 165, type: 'oly', scheme: 'oly_build', pattern: 'clean',
+        { id: 'power_clean',          name: 'Power Clean',          sets: 4, warmups: 3, repRange: [3,3],   seedWeight: 165, type: 'oly', scheme: 'oly_build', pattern: 'clean',
           rotation: ['hang_power_clean','clean_from_blocks','muscle_clean','clean_deadlift_speed'],
           alternatives: [
             { name: 'Hang Power Clean',       notes: 'Shorter pull, emphasizes second pull' },
@@ -297,7 +298,7 @@ const PROGRAM = {
             { name: 'Muscle Clean',           notes: 'No re-bend, upper body pull emphasis' },
             { name: 'Clean High Pull',        notes: 'No catch, trains explosive pull mechanics' },
           ]},
-        { id: 'push_press',           name: 'Push Press',           sets: 4, repRange: [4,4],   seedWeight: 145, type: 'oly', scheme: 'oly_build', pattern: 'v_push',
+        { id: 'push_press',           name: 'Push Press',           sets: 3, warmups: 2, repRange: [4,4],   seedWeight: 145, type: 'oly', scheme: 'oly_build', pattern: 'v_push',
           rotation: ['push_jerk','split_jerk','military_press_heavy','db_push_press'],
           alternatives: [
             { name: 'Push Jerk',              notes: 'Catch in quarter squat, more aggressive dip' },
@@ -342,7 +343,7 @@ const PROGRAM = {
     6: {
       name: 'Saturday', label: 'Full Olympic', accent: '#A55AF5', type: 'training',
       exercises: [
-        { id: 'snatch_or_cj',             name: 'Snatch OR Clean & Jerk',     sets: 6, repRange: [2,3], seedWeight: 145, type: 'oly', scheme: 'oly_build', pattern: 'snatch',
+        { id: 'snatch_or_cj',             name: 'Snatch OR Clean & Jerk',     sets: 4, warmups: 3, repRange: [2,3], seedWeight: 145, type: 'oly', scheme: 'oly_build', pattern: 'snatch',
           rotation: ['full_snatch','full_clean_and_jerk','clean_and_press','snatch_complex'],
           alternatives: [
             { name: 'Full Snatch',            notes: 'Technical, overhead squat receive' },
@@ -358,7 +359,7 @@ const PROGRAM = {
             { name: 'Jerk Recovery',          notes: 'Heavy overhead walk-in, lockout strength' },
             { name: 'Jerk Dip & Drive',       notes: 'Technique drill, no press, just dip+drive' },
           ]},
-        { id: 'clean_pull_snatch_pull',    name: 'Clean Pull / Snatch Pull',    sets: 3, repRange: [4,4], seedWeight: 195, type: 'oly', scheme: 'oly_build', pattern: 'oly_pull',
+        { id: 'clean_pull_snatch_pull',    name: 'Clean Pull / Snatch Pull',    sets: 3, warmups: 2, repRange: [4,4], seedWeight: 195, type: 'oly', scheme: 'oly_build', pattern: 'oly_pull',
           rotation: ['snatch_deadlift','clean_deadlift','paused_pull','segment_pull'],
           alternatives: [
             { name: 'Snatch Deadlift',        notes: 'Slow pull to reinforce positions' },

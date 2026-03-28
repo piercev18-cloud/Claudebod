@@ -603,7 +603,7 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
       </div>
       <div class="ex-detail-header">
         <h2 class="ex-detail-name">${displayName}${swapName ? ' <span class="swap-active-badge">SWAPPED</span>' : ''}</h2>
-        <div class="ex-detail-meta">${ex.sets} sets · ${repStr} reps · ${ex.type}${schemeLabel ? ` · ${schemeLabel}` : ''}</div>
+        <div class="ex-detail-meta">${ex.sets} working sets${ex.warmups ? ` + ${ex.warmups} warm-up` : ''} · ${repStr} reps · ${ex.type}${schemeLabel ? ` · ${schemeLabel}` : ''}</div>
         ${Session.getPrescriptionReason(ex.id) ? `<div class="ex-coach-reason">${Session.getPrescriptionReason(ex.id)}</div>` : ''}
       </div>
       <div class="ex-tabs">
@@ -636,19 +636,26 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
         <span class="rec-value">${topWeight} lb</span>
       </div>`;
 
+  // Track working-set counter separately so labels read S1, S2... skipping warmups
+  let workingSetNum = 0;
   html += `<div class="sets-container">`;
   for (let i = 0; i < sets.length; i++) {
-    const set    = sets[i];
+    const set      = sets[i];
+    const isWarmup = !!set.isWarmup;
+    if (!isWarmup) workingSetNum++;
     const tgt    = set.targetReps ?? maxR;
-    const rpeLabel = set.reps != null ? Session.getRPELabel(set.reps, tgt) : '';
-    const rpeClass = set.reps != null ? Session.getRPEClass(set.reps, tgt) : '';
+    const rpeLabel = (!isWarmup && set.reps != null) ? Session.getRPELabel(set.reps, tgt) : '';
+    const rpeClass = (!isWarmup && set.reps != null) ? Session.getRPEClass(set.reps, tgt) : '';
     const w      = set.weight != null ? set.weight : topWeight;
     const r      = set.reps != null ? set.reps : '';
     const effort = set.effortValue != null ? set.effortValue : 2;
+    const setLabel = isWarmup
+      ? `<span class="set-num warmup-num">W</span>`
+      : `<div class="set-num">S${workingSetNum}</div>`;
 
     html += `
-      <div class="set-row${set.done ? ' set-done' : ''}" data-set-index="${i}" data-target-reps="${tgt}">
-        <div class="set-num">S${i + 1}</div>
+      <div class="set-row${set.done ? ' set-done' : ''}${isWarmup ? ' warmup-set' : ''}" data-set-index="${i}" data-target-reps="${tgt}">
+        ${setLabel}
         <div class="set-inputs">
           <input type="number" class="set-weight" data-index="${i}"
             value="${w}" placeholder="lb" step="2.5" min="0" inputmode="decimal"${set.done ? ' disabled' : ''}>
@@ -656,11 +663,12 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
           <input type="number" class="set-reps" data-index="${i}"
             value="${r}" placeholder="${tgt}" min="0" max="99" inputmode="numeric"${set.done ? ' disabled' : ''}>
           <span class="set-unit">reps</span>
-          <span class="rpe-badge ${rpeClass}" data-index="${i}">${rpeLabel}</span>
+          ${!isWarmup ? `<span class="rpe-badge ${rpeClass}" data-index="${i}">${rpeLabel}</span>` : ''}
         </div>
         <button class="set-done-btn${set.done ? ' completed' : ''}"
           data-index="${i}" data-exercise="${exerciseId}" data-type="${ex.type}">✓</button>
       </div>
+      ${!isWarmup ? `
       <div class="effort-row${set.done ? '' : ' hidden'}" data-set-index="${i}">
         <span class="effort-label">EFFORT</span>
         <div class="effort-chips" data-set-index="${i}">
@@ -672,7 +680,7 @@ async function loadAndRenderExerciseDetail(exerciseId, day) {
             </button>`).join('')}
         </div>
         ${i < sets.length - 1 ? `<span class="effort-next-hint" data-set-index="${i}"></span>` : ''}
-      </div>`;
+      </div>` : ''}`;
   }
   html += `</div>`; // sets-container
   html += `</div>`; // ex-panel-log

@@ -340,7 +340,10 @@ details[open] .accordion-chevron{transform:rotate(90deg)}
   transition:background .2s;margin-top:6px;
 }
 .set-row.set-done{background:rgba(57,255,20,.04);border-color:rgba(57,255,20,.2);opacity:.7}
+.set-row.warmup-set{border-style:dashed;opacity:.75}
+.set-row.warmup-set.set-done{opacity:.5}
 .set-num{font-family:var(--font-pixel);font-size:8px;color:var(--text-muted);width:24px;flex-shrink:0}
+.warmup-num{font-family:var(--font-pixel);font-size:8px;color:var(--text-dim);width:24px;flex-shrink:0}
 .set-inputs{flex:1;display:flex;align-items:center;gap:4px;min-width:0}
 .set-weight,.set-reps{
   background:var(--surface2);border:2px solid var(--border2);

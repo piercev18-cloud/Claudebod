@@ -87,7 +87,8 @@ const Session = (() => {
       return exercise.seedWeight;
     }
 
-    const doneSets = lastSession.sets.filter(s => s.done && s.weight != null);
+    // Exclude warm-up sets — only working sets drive progression
+    const doneSets = lastSession.sets.filter(s => s.done && s.weight != null && !s.isWarmup);
     if (!doneSets.length) {
       prescriptionReasons[exercise.id] = 'Starting weight — no prior data';
       return exercise.seedWeight;
@@ -98,7 +99,7 @@ const Session = (() => {
     const prog = PROGRAM.progression[exercise.type] || PROGRAM.progression.compound;
     const weeklyInc = phaseInfo ? (phaseInfo.phase.weeklyIncrease[exercise.type] || prog.increase) : prog.increase;
 
-    const score = computePerformanceScore(doneSets, exercise.repRange);
+    const score = computePerformanceScore(doneSets.filter(s => !s.isWarmup), exercise.repRange);
 
     let recommended = lastWeight;
     let reason;
@@ -199,7 +200,7 @@ const Session = (() => {
   function buildSetsFromScheme(exercise, topWeight) {
     const schemeKey = exercise.scheme || 'straight';
     const gen = SET_SCHEMES[schemeKey] || SET_SCHEMES.straight;
-    return gen(topWeight, exercise.sets, exercise.repRange);
+    return gen(topWeight, exercise.sets, exercise.repRange, exercise.warmups || 0);
   }
 
   async function getSetsForExercise(exercise, date) {
