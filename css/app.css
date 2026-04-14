@@ -1,5 +1,5 @@
 /* ╔════════════════════════════════════════════════════════════════╗
-   ║  CLAUDEBOD v3 — RETRO 80s / 8-BIT ARCADE EDITION            ║
+   ║  CLAUDEBOD v4 — DOOM EDITION (Industrial Hell Gym)          ║
    ╚════════════════════════════════════════════════════════════════╝ */
 
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600&display=swap');
@@ -8,30 +8,30 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 
 :root {
-  --bg:       #0a0a12;
-  --surface:  #12121e;
-  --surface2: #1a1a2e;
-  --surface3: #222238;
-  --border:   #2a2a44;
-  --border2:  #3a3a55;
-  --border3:  #4a4a66;
-  --text:     #e0e0ff;
-  --text-muted: #8888bb;
-  --text-dim:   #555577;
+  --bg:       #1a0a0a;
+  --surface:  #2d1111;
+  --surface2: #3d1818;
+  --surface3: #4a1f1f;
+  --border:   #5a2020;
+  --border2:  #6a3030;
+  --border3:  #7a4040;
+  --text:     #e8cccc;
+  --text-muted: #a88888;
+  --text-dim:   #664444;
 
-  /* Neon palette */
-  --neon-green:  #39ff14;
-  --neon-cyan:   #00f0ff;
-  --neon-pink:   #ff2975;
-  --neon-yellow: #ffe600;
-  --neon-orange: #ff6b2b;
-  --neon-purple: #b44aff;
+  /* Doom palette - dark reds, blacks, industrial accents */
+  --neon-green:  #cc0000;
+  --neon-cyan:   #ff4400;
+  --neon-pink:   #ff0000;
+  --neon-yellow: #ffaa00;
+  --neon-orange: #ff6600;
+  --neon-purple: #aa2200;
 
-  --accent:      var(--neon-green);
-  --accent-today: var(--neon-green);
-  --danger:  #ff2975;
-  --success: #39ff14;
-  --warn:    #ffe600;
+  --accent:      #ff3300;
+  --accent-today: #ff3300;
+  --danger:  #ff0000;
+  --success: #ff3300;
+  --warn:    #ffaa00;
 
   /* 8-bit pixel font for headings, Barlow for body */
   --font-pixel: 'Press Start 2P', monospace;
@@ -79,7 +79,7 @@ button{user-select:none;-webkit-user-select:none}
 
 /* ── App Shell ─────────────────────────────────────────────────── */
 #app{max-width:480px;margin:0 auto;height:100dvh;display:flex;flex-direction:column;overflow:hidden;position:relative;
-  background:linear-gradient(180deg, #0a0a18 0%, #0f0f22 50%, #0a0a18 100%);
+  background:linear-gradient(180deg, #0f0605 0%, #1a0a0a 50%, #0f0605 100%);
 }
 
 #main-content{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;scroll-behavior:smooth;padding-bottom:20px}
