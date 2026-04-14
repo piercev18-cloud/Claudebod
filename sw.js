@@ -1,7 +1,7 @@
 // CLAUDEBOD - Service Worker
 'use strict';
 
-const CACHE_NAME = 'claudebod-v3';
+const CACHE_NAME = 'claudebod-v4';
 const ASSETS = [
   './',
   './index.html',

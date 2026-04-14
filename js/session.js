@@ -224,6 +224,10 @@ const Session = (() => {
             break;
           }
         }
+        // No logged variant found — auto-select defaultVariant if one is set
+        if (!variantSelections[ex.id] && ex.defaultVariant) {
+          variantSelections[ex.id] = ex.defaultVariant;
+        }
       } else {
         const log = await Store.getSetLog(ex.id, date);
         if (log && log.sets) sessionData[ex.id] = { sets: log.sets };
@@ -243,8 +247,14 @@ const Session = (() => {
   }
 
   async function getSetsForExercise(exercise, date) {
-    // Variant exercise with no selection yet — caller must show picker first
-    if (exercise.variants && !variantSelections[exercise.id]) return null;
+    // Variant exercise with no selection yet — auto-select default or show picker
+    if (exercise.variants && !variantSelections[exercise.id]) {
+      if (exercise.defaultVariant) {
+        variantSelections[exercise.id] = exercise.defaultVariant;
+      } else {
+        return null; // Caller must show picker first
+      }
+    }
 
     const effectiveId = getEffectiveId(exercise.id);
     if (sessionData[effectiveId]) return sessionData[effectiveId].sets;
